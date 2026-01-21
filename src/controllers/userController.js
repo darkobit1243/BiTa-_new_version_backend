@@ -1,8 +1,8 @@
-const { db } = require('../store/db');
+const { store } = require('../store/store');
 
 async function getUnlockedOffers(req, res) {
   const { userId } = req.params;
-  const offerIds = db.getUnlockedOfferIds(userId);
+  const offerIds = await store.getUnlockedOfferIds(userId);
   return res.json({ data: offerIds });
 }
 
@@ -15,7 +15,7 @@ async function unlockOffer(req, res) {
     return res.status(400).json({ data: { error: 'offerId must be a positive number' } });
   }
 
-  db.unlockOffer(userId, parsed);
+  await store.unlockOffer(userId, parsed);
   return res.status(201).json({ data: { ok: true } });
 }
 

@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bita
+      POSTGRES_USER: bita
+      POSTGRES_PASSWORD: bita_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - bita_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bita -d bita"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  bita-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: 8080
+      HOST: 0.0.0.0
+      STORE: postgres
+      DATABASE_URL: postgres://bita:bita_password@db:5432/bita
+      # LOG_REQUESTS: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  bita_pgdata:

@@ -1,5 +1,8 @@
 # VPS Deploy (Mock Backend)
 
+Note: By default this backend can run with an in-memory mock store.
+For a real database, use the PostgreSQL store (recommended).
+
 You can deploy the mock backend in two ways:
 
 1) **Docker (recommended)** – easiest on a VPS if Docker is available.
@@ -15,6 +18,19 @@ git clone <your-repo>
 cd <your-repo>/server
 sudo docker compose up --build -d
 ```
+
+### Option A2 — Docker + PostgreSQL (recommended for real data)
+
+```bash
+cd <your-repo>/server
+sudo docker compose -f docker-compose.postgres.yml up --build -d
+```
+
+Optional (recommended if you want data to survive restarts):
+
+- Uncomment the `volumes` section in `docker-compose.yml` and enable:
+	- `PERSIST_DB=true`
+	- `DB_PATH=/app/data/db.json`
 
 - App listens on `:8080`.
 - Put it behind Nginx/Caddy for HTTPS on `:443`.
@@ -82,6 +98,12 @@ sudo tee /etc/bita-mock.env >/dev/null <<'EOF'
 PORT=8080
 HOST=0.0.0.0
 LOG_REQUESTS=false
+PERSIST_DB=true
+DB_PATH=/opt/bita-mock/data/db.json
+
+# Optional debug endpoint (protect it with a token)
+# ENABLE_DEBUG_ENDPOINTS=true
+# DEBUG_TOKEN=changeme
 EOF
 ```
 

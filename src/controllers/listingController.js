@@ -1,4 +1,4 @@
-const { db } = require('../store/db');
+const { store } = require('../store/store');
 
 function pick(obj, keys) {
   const out = {};
@@ -11,7 +11,7 @@ function pick(obj, keys) {
 async function feed(req, res) {
   const { userRole, serviceType, adType, originCityId, destinationCityId } = req.query || {};
 
-  const list = db.listFeed({
+  const list = await store.listFeed({
     userRole,
     serviceType,
     adType,
@@ -57,14 +57,14 @@ async function create(req, res) {
   ];
 
   const payload = pick(body, allowed);
-  const listing = db.createListing(payload);
+  const listing = await store.createListing(payload);
 
   return res.status(201).json({ data: listing });
 }
 
 async function offersForListing(req, res) {
   const listingId = req.params.listingId;
-  const offers = db.getOffersForListing(listingId);
+  const offers = await store.getOffersForListing(listingId);
   return res.json({ data: offers });
 }
 

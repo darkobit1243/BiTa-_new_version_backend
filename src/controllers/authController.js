@@ -1,4 +1,4 @@
-const { db } = require('../store/db');
+const { store } = require('../store/store');
 
 function sessionFromUser(user) {
   return {
@@ -18,10 +18,10 @@ async function login(req, res) {
   }
 
   // Mock auth: create user if not found.
-  let user = db.findUserByEmail(email);
+  let user = await store.findUserByEmail(email);
   if (!user) {
     const isPremium = String(email).toLowerCase().includes('premium');
-    user = db.createUser({
+    user = await store.createUser({
       email: String(email),
       name: 'Demo Kullanıcı',
       role: String(role),
@@ -39,7 +39,7 @@ async function register(req, res) {
     return res.status(400).json({ data: { error: 'email/password/role required' } });
   }
 
-  const existing = db.findUserByEmail(body.email);
+  const existing = await store.findUserByEmail(body.email);
   if (existing) {
     return res.status(409).json({ data: { error: 'user already exists' } });
   }
@@ -47,7 +47,7 @@ async function register(req, res) {
   const membershipType = String(body.membershipType || '').toLowerCase();
   const isPremium = membershipType === 'premium';
 
-  const user = db.createUser({
+  const user = await store.createUser({
     email: String(body.email),
     name: String(body.name || 'Demo Kullanıcı'),
     role: String(body.role),

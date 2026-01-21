@@ -6,6 +6,15 @@ services:
     environment:
       - PORT=8080
       # - LOG_REQUESTS=true
+      # Optional: persist mock data to disk
+      # - PERSIST_DB=true
+      # - DB_PATH=/app/data/db.json
+      # Optional: enable debug endpoint (protect with token if exposed)
+      # - ENABLE_DEBUG_ENDPOINTS=true
+      # - DEBUG_TOKEN=changeme
     ports:
       - "8080:8080"
+    # Optional: persist db.json on the host
+    # volumes:
+    #   - ./data:/app/data
     restart: unless-stopped

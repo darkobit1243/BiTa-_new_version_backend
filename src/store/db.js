@@ -1,4 +1,15 @@
 // Simple in-memory store for mocking the API.
+//
+// Optional persistence:
+// - Enable with: PERSIST_DB=true
+// - Path: DB_PATH=/absolute/or/relative/path.json (default: ./data/db.json)
+//
+// Notes:
+// - This is not a real database; it's a lightweight JSON snapshot.
+// - Writes are debounced to reduce disk churn.
+
+const fs = require('fs');
+const path = require('path');
 
 function nowIso() {
   return new Date().toISOString();
@@ -8,11 +19,114 @@ let nextUserId = 1;
 let nextListingId = 1;
 let nextOfferId = 1;
 
+const persistEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.PERSIST_DB || '').toLowerCase());
+const dbPath = String(process.env.DB_PATH || path.join(process.cwd(), 'data', 'db.json'));
+
+let persistTimer = null;
+
+function ensureParentDir(filePath) {
+  const dir = path.dirname(filePath);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (_) {
+    // ignore
+  }
+}
+
+function safeReadJson(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (!raw.trim()) return null;
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function computeNextId(items, getter, fallback) {
+  let max = 0;
+  for (const item of items) {
+    const v = Number(getter(item));
+    if (Number.isFinite(v) && v > max) max = v;
+  }
+  return Math.max(fallback, max + 1);
+}
+
+function serializeMaps({ offersByListingId, unlockedOfferIdsByUserId }) {
+  const offersObj = {};
+  for (const [k, v] of offersByListingId.entries()) {
+    offersObj[String(k)] = Array.isArray(v) ? v : [];
+  }
+
+  const unlockedObj = {};
+  for (const [k, set] of unlockedOfferIdsByUserId.entries()) {
+    unlockedObj[String(k)] = Array.from(set || []);
+  }
+
+  return { offersByListingId: offersObj, unlockedOfferIdsByUserId: unlockedObj };
+}
+
+function hydrateMaps({ offersByListingId, unlockedOfferIdsByUserId }) {
+  const offers = new Map();
+  const unlocked = new Map();
+
+  if (offersByListingId && typeof offersByListingId === 'object') {
+    for (const [listingId, list] of Object.entries(offersByListingId)) {
+      offers.set(String(listingId), Array.isArray(list) ? list : []);
+    }
+  }
+
+  if (unlockedOfferIdsByUserId && typeof unlockedOfferIdsByUserId === 'object') {
+    for (const [userId, ids] of Object.entries(unlockedOfferIdsByUserId)) {
+      unlocked.set(String(userId), new Set(Array.isArray(ids) ? ids.map(Number) : []));
+    }
+  }
+
+  return { offersByListingId: offers, unlockedOfferIdsByUserId: unlocked };
+}
+
 const db = {
   users: [],
   listings: [],
   offersByListingId: new Map(),
   unlockedOfferIdsByUserId: new Map(),
+
+  dump() {
+    const { offersByListingId, unlockedOfferIdsByUserId } = serializeMaps(db);
+    return {
+      meta: {
+        persistEnabled,
+        dbPath,
+        counts: {
+          users: db.users.length,
+          listings: db.listings.length,
+          offersLists: Object.keys(offersByListingId).length,
+          unlockedUsers: Object.keys(unlockedOfferIdsByUserId).length,
+        },
+      },
+      users: db.users,
+      listings: db.listings,
+      offersByListingId,
+      unlockedOfferIdsByUserId,
+      next: { nextUserId, nextListingId, nextOfferId },
+    };
+  },
+
+  _persistSoon() {
+    if (!persistEnabled) return;
+    if (persistTimer) return;
+
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      try {
+        ensureParentDir(dbPath);
+        fs.writeFileSync(dbPath, JSON.stringify(db.dump(), null, 2), 'utf8');
+      } catch (_) {
+        // ignore
+      }
+    }, 250);
+  },
 
   createUser({ email, name, role, isPremium, providerServiceType }) {
     const user = {
@@ -25,6 +139,7 @@ const db = {
       createdAt: nowIso(),
     };
     db.users.push(user);
+    db._persistSoon();
     return user;
   },
 
@@ -92,6 +207,8 @@ const db = {
 
     db.offersByListingId.set(listing.id, baseOffers);
 
+    db._persistSoon();
+
     return listing;
   },
 
@@ -122,38 +239,78 @@ const db = {
     const set = db.unlockedOfferIdsByUserId.get(uid) || new Set();
     set.add(Number(offerId));
     db.unlockedOfferIdsByUserId.set(uid, set);
+    db._persistSoon();
   },
 };
 
-// Seed one demo user + one listing so feed isn't empty.
-const demo = db.createUser({
-  email: 'demo@bitasi.app',
-  name: 'Demo Kullanıcı',
-  role: 'seeker',
-  isPremium: false,
-});
+function seedDemoData() {
+  // Seed one demo user + one listing so feed isn't empty.
+  const demo = db.createUser({
+    email: 'demo@bitasi.app',
+    name: 'Demo Kullanıcı',
+    role: 'seeker',
+    isPremium: false,
+  });
 
-const demoListing = db.createListing({
-  ownerId: demo.email,
-  ownerRole: 'seeker',
-  title: 'İstanbul → Ankara Parsiyel',
-  adType: 'cargo',
-  serviceType: 'transport',
-  originCityId: 34,
-  originCityName: 'İstanbul',
-  originDistrictId: 1,
-  originDistrictName: 'Kadıköy',
-  destinationCityId: 6,
-  destinationCityName: 'Ankara',
-  destinationDistrictId: 1,
-  destinationDistrictName: 'Çankaya',
-  date: nowIso(),
-  cargoType: 'Palet',
-  weight: '1000',
-  providerId: null,
-  providerCompanyName: null,
-  notes: null,
-  isBoosted: false,
-});
+  db.createListing({
+    ownerId: demo.email,
+    ownerRole: 'seeker',
+    title: 'İstanbul → Ankara Parsiyel',
+    adType: 'cargo',
+    serviceType: 'transport',
+    originCityId: 34,
+    originCityName: 'İstanbul',
+    originDistrictId: 1,
+    originDistrictName: 'Kadıköy',
+    destinationCityId: 6,
+    destinationCityName: 'Ankara',
+    destinationDistrictId: 1,
+    destinationDistrictName: 'Çankaya',
+    date: nowIso(),
+    cargoType: 'Palet',
+    weight: '1000',
+    providerId: null,
+    providerCompanyName: null,
+    notes: null,
+    isBoosted: false,
+  });
+}
+
+function tryLoadPersistedData() {
+  if (!persistEnabled) return false;
+  const snap = safeReadJson(dbPath);
+  if (!snap || typeof snap !== 'object') return false;
+
+  if (Array.isArray(snap.users)) db.users = snap.users;
+  if (Array.isArray(snap.listings)) db.listings = snap.listings;
+
+  const hydrated = hydrateMaps(snap);
+  db.offersByListingId = hydrated.offersByListingId;
+  db.unlockedOfferIdsByUserId = hydrated.unlockedOfferIdsByUserId;
+
+  // Restore id counters (fallback: compute)
+  if (snap.next && typeof snap.next === 'object') {
+    if (Number.isFinite(Number(snap.next.nextUserId))) nextUserId = Number(snap.next.nextUserId);
+    if (Number.isFinite(Number(snap.next.nextListingId))) nextListingId = Number(snap.next.nextListingId);
+    if (Number.isFinite(Number(snap.next.nextOfferId))) nextOfferId = Number(snap.next.nextOfferId);
+  }
+
+  // Compute in case snapshot is missing/old
+  nextUserId = computeNextId(db.users, (u) => u.userId, nextUserId);
+  nextListingId = computeNextId(db.listings, (l) => l.id, nextListingId);
+
+  // Offers are per-listing lists
+  const allOffers = [];
+  for (const list of db.offersByListingId.values()) {
+    if (Array.isArray(list)) allOffers.push(...list);
+  }
+  nextOfferId = computeNextId(allOffers, (o) => o.offerId || o.id, nextOfferId);
+
+  return true;
+}
+
+if (!tryLoadPersistedData()) {
+  seedDemoData();
+}
 
 module.exports = { db };

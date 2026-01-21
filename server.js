@@ -6,7 +6,7 @@ const listingsRoutes = require('./src/routes/listings');
 const usersRoutes = require('./src/routes/users');
 const os = require('os');
 
-const { db } = require('./src/store/db');
+const { store } = require('./src/store/store');
 
 const app = express();
 
@@ -24,8 +24,29 @@ if (String(process.env.LOG_REQUESTS || '').toLowerCase() === 'true') {
 
 // Debug endpoint
 app.get('/health', (req, res) => {
-  res.json({ data: { ok: true, users: db.users.length, listings: db.listings.length } });
+  Promise.resolve(store.stats())
+    .then((stats) => res.json({ data: { ok: true, ...stats } }))
+    .catch(() => res.json({ data: { ok: true } }));
 });
+
+// Optional debug endpoint (disabled by default).
+// Enable with: ENABLE_DEBUG_ENDPOINTS=true
+// Optional auth: DEBUG_TOKEN=some-secret + header: x-debug-token: some-secret
+if (['1', 'true', 'yes', 'on'].includes(String(process.env.ENABLE_DEBUG_ENDPOINTS || '').toLowerCase())) {
+  const debugToken = String(process.env.DEBUG_TOKEN || '').trim();
+
+  app.get('/debug/db', (req, res) => {
+    if (debugToken) {
+      const provided = String(req.get('x-debug-token') || '').trim();
+      if (provided !== debugToken) {
+        return res.status(401).json({ data: { error: 'unauthorized' } });
+      }
+    }
+    return Promise.resolve(store.dump ? store.dump() : { meta: { store: 'unknown' } })
+      .then((data) => res.json({ data }))
+      .catch((err) => res.status(500).json({ data: { error: 'failed', message: String(err && err.message ? err.message : err) } }));
+  });
+}
 
 app.use('/auth', authRoutes);
 app.use('/listings', listingsRoutes);
@@ -34,8 +55,13 @@ app.use('/users', usersRoutes);
 const port = process.env.PORT ? Number(process.env.PORT) : 8080;
 const host = (process.env.HOST && String(process.env.HOST).trim()) ? String(process.env.HOST).trim() : '0.0.0.0';
 
-const server = app.listen(port, host, () => {
-  console.log(`Mock backend listening on http://${host}:${port}`);
+async function start() {
+  if (store && typeof store.init === 'function') {
+    await store.init();
+  }
+
+  const server = app.listen(port, host, () => {
+    console.log(`Mock backend listening on http://${host}:${port}`);
 
   // 0.0.0.0 means "bind all interfaces" (good for VPS). You don't browse to 0.0.0.0.
   if (host === '0.0.0.0') {
@@ -62,15 +88,21 @@ const server = app.listen(port, host, () => {
       // ignore
     }
   }
-});
+  });
 
-server.on('error', (err) => {
-  if (err && err.code === 'EADDRINUSE') {
-    console.error(`Port ${port} is already in use on ${host}.`);
-    console.error('Stop the existing process, or run with a different port, e.g.:');
-    console.error('  PORT=8081 node server.js');
-  } else {
-    console.error('Server failed to start:', err);
-  }
+  server.on('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(`Port ${port} is already in use on ${host}.`);
+      console.error('Stop the existing process, or run with a different port, e.g.:');
+      console.error('  PORT=8081 node server.js');
+    } else {
+      console.error('Server failed to start:', err);
+    }
+    process.exit(1);
+  });
+}
+
+start().catch((err) => {
+  console.error('Server failed to start:', err);
   process.exit(1);
 });
