@@ -1,0 +1,275 @@
+{
+  "info": {
+    "_postman_id": "6c7c9e76-56d0-4f79-8f50-7fbb8d4b7b6a",
+    "name": "BiTa Mock Backend – Smoke + Unlock",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Ensure a stable random email for this run",
+          "if (!pm.environment.get('email')) {",
+          "  const stamp = Date.now().toString(36);",
+          "  const rnd = Math.random().toString(36).slice(2, 8);",
+          "  pm.environment.set('email', `postman_${stamp}_${rnd}@bitasi.app`);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.code === 200);",
+              "const json = pm.response.json();",
+              "pm.test('data.ok is true', () => json && json.data && json.data.ok === true);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth – Register",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"role\": \"{{role}}\",\n  \"membershipType\": \"{{membershipType}}\",\n  \"name\": \"Postman User\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/register",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "register"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 201', () => pm.response.code === 201);",
+              "const json = pm.response.json();",
+              "pm.test('has userId', () => !!(json && json.data && json.data.userId));",
+              "if (json && json.data && json.data.userId) pm.environment.set('userId', String(json.data.userId));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth – Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"role\": \"{{role}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.code === 200);",
+              "const json = pm.response.json();",
+              "pm.test('has userId', () => !!(json && json.data && json.data.userId));",
+              "if (json && json.data && json.data.userId) pm.environment.set('userId', String(json.data.userId));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Listings – Feed (basic)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/listings/feed?userRole={{role}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["listings", "feed"],
+          "query": [{ "key": "userRole", "value": "{{role}}" }]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.code === 200);",
+              "const json = pm.response.json();",
+              "pm.test('data is array', () => Array.isArray(json && json.data));",
+              "if (json && Array.isArray(json.data) && json.data.length) {",
+              "  pm.environment.set('listingId', String(json.data[0].id));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Listings – Offers For Listing",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/listings/{{listingId}}/offers",
+          "host": ["{{baseUrl}}"],
+          "path": ["listings", "{{listingId}}", "offers"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.code === 200);",
+              "const json = pm.response.json();",
+              "pm.test('offers is array', () => Array.isArray(json && json.data));",
+              "if (json && Array.isArray(json.data) && json.data.length) {",
+              "  const o = json.data[0];",
+              "  const id = o.offerId || o.id;",
+              "  pm.environment.set('offerId', String(id));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users – Get Unlocked Offers",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/users/{{userId}}/unlocked-offers",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "{{userId}}", "unlocked-offers"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.code === 200);",
+              "const json = pm.response.json();",
+              "pm.test('data is array', () => Array.isArray(json && json.data));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users – Unlock Offer",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"offerId\": {{offerId}}\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/{{userId}}/unlocked-offers",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "{{userId}}", "unlocked-offers"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 201', () => pm.response.code === 201);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users – Get Unlocked Offers (after unlock)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/users/{{userId}}/unlocked-offers",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "{{userId}}", "unlocked-offers"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.code === 200);",
+              "const json = pm.response.json();",
+              "pm.test('contains offerId', () => Array.isArray(json && json.data) && json.data.map(String).includes(String(pm.environment.get('offerId'))));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Listings – Create Listing",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"ownerId\": \"{{email}}\",\n  \"ownerRole\": \"{{role}}\",\n  \"title\": \"Postman Test Listing\",\n  \"adType\": \"cargo\",\n  \"serviceType\": \"transport\",\n  \"originCityId\": 34,\n  \"originCityName\": \"İstanbul\",\n  \"destinationCityId\": 6,\n  \"destinationCityName\": \"Ankara\",\n  \"date\": \"2026-01-21T00:00:00.000Z\",\n  \"cargoType\": \"Palet\",\n  \"weight\": \"1000\",\n  \"isBoosted\": false\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/listings",
+          "host": ["{{baseUrl}}"],
+          "path": ["listings"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 201', () => pm.response.code === 201);",
+              "const json = pm.response.json();",
+              "pm.test('created listing has id', () => !!(json && json.data && json.data.id));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

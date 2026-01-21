@@ -4,6 +4,7 @@ const cors = require('cors');
 const authRoutes = require('./src/routes/auth');
 const listingsRoutes = require('./src/routes/listings');
 const usersRoutes = require('./src/routes/users');
+const os = require('os');
 
 const { db } = require('./src/store/db');
 
@@ -31,6 +32,45 @@ app.use('/listings', listingsRoutes);
 app.use('/users', usersRoutes);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 8080;
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Mock backend listening on http://0.0.0.0:${port}`);
+const host = (process.env.HOST && String(process.env.HOST).trim()) ? String(process.env.HOST).trim() : '0.0.0.0';
+
+const server = app.listen(port, host, () => {
+  console.log(`Mock backend listening on http://${host}:${port}`);
+
+  // 0.0.0.0 means "bind all interfaces" (good for VPS). You don't browse to 0.0.0.0.
+  if (host === '0.0.0.0') {
+    console.log(`Local test: http://localhost:${port}/health`);
+
+    try {
+      const nets = os.networkInterfaces();
+      const ips = [];
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name] || []) {
+          if (net && net.family === 'IPv4' && !net.internal) {
+            ips.push(net.address);
+          }
+        }
+      }
+
+      if (ips.length) {
+        console.log('LAN/VPS interface URLs:');
+        for (const ip of ips) {
+          console.log(`- http://${ip}:${port}/health`);
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+});
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`Port ${port} is already in use on ${host}.`);
+    console.error('Stop the existing process, or run with a different port, e.g.:');
+    console.error('  PORT=8081 node server.js');
+  } else {
+    console.error('Server failed to start:', err);
+  }
+  process.exit(1);
 });

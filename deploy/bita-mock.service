@@ -9,8 +9,16 @@ ExecStart=/usr/bin/node /opt/bita-mock/current/server.js
 Restart=always
 RestartSec=2
 
+# Run as a dedicated non-root user
+User=bitasi
+Group=bitasi
+
+# Optional overrides (create this file on VPS if needed)
+EnvironmentFile=-/etc/bita-mock.env
+
 # Environment
 Environment=PORT=8080
+Environment=HOST=0.0.0.0
 Environment=LOG_REQUESTS=false
 
 # Hardening (reasonable defaults)
