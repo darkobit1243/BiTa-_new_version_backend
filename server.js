@@ -31,6 +31,6 @@ app.use('/listings', listingsRoutes);
 app.use('/users', usersRoutes);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 8080;
-app.listen(port, () => {
-  console.log(`Mock backend listening on http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Mock backend listening on http://0.0.0.0:${port}`);
 });
