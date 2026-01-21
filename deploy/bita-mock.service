@@ -1,0 +1,23 @@
+[Unit]
+Description=BiTa Mock Backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/bita-mock/current
+ExecStart=/usr/bin/node /opt/bita-mock/current/server.js
+Restart=always
+RestartSec=2
+
+# Environment
+Environment=PORT=8080
+Environment=LOG_REQUESTS=false
+
+# Hardening (reasonable defaults)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
