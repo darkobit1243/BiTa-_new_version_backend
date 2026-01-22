@@ -15,14 +15,14 @@ Prereqs: Docker + docker compose plugin.
 ```bash
 # on VPS
 git clone <your-repo>
-cd <your-repo>/server
+cd <your-repo>
 sudo docker compose up --build -d
 ```
 
 ### Option A2 — Docker + PostgreSQL (recommended for real data)
 
 ```bash
-cd <your-repo>/server
+cd <your-repo>
 sudo docker compose -f docker-compose.postgres.yml up --build -d
 ```
 

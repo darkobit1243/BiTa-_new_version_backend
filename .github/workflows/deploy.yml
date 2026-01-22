@@ -1,0 +1,73 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate deploy secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${{ secrets.VPS_HOST }}" ]; then
+            echo "Missing GitHub Secret: VPS_HOST" >&2
+            exit 1
+          fi
+          if [ -z "${{ secrets.VPS_USER }}" ]; then
+            echo "Missing GitHub Secret: VPS_USER" >&2
+            exit 1
+          fi
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "Missing GitHub Secret: VPS_SSH_KEY" >&2
+            exit 1
+          fi
+
+          echo "Secrets look set. Continuing."
+
+      - name: Deploy to VPS (git + docker compose)
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          APP_DIR: ${{ secrets.VPS_APP_DIR }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22667 }}
+          envs: APP_DIR
+          script: |
+            set -euo pipefail
+
+            APP_DIR="${APP_DIR:-/home/bitasi/apps/bitasi}"
+            echo "==> Deploying in: ${APP_DIR}"
+
+            cd "$APP_DIR"
+
+            if [ ! -d .git ]; then
+              echo "ERROR: $APP_DIR is not a git repo" >&2
+              pwd
+              ls -la
+              exit 1
+            fi
+
+            git fetch origin main
+            git reset --hard origin/main
+
+            if [ ! -f docker-compose.yml ]; then
+              echo "ERROR: docker-compose.yml not found in $APP_DIR" >&2
+              ls -la
+              exit 1
+            fi
+
+            docker compose up -d --build --remove-orphans
+
+            echo "==> Health check (best-effort)"
+            curl -fsS http://127.0.0.1:8080/health | head -c 200 || true
+
+            echo "==> Containers"
+            docker compose ps || true
