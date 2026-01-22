@@ -134,7 +134,7 @@ function createMemoryStore() {
       return { users: db.users.length, listings: db.listings.length };
     },
 
-    createUser({ email, name, role, isPremium, providerServiceType }) {
+    createUser({ email, name, role, isPremium, providerServiceType, approvalStatus }) {
       const user = {
         userId: String(nextUserId++),
         email,
@@ -142,11 +142,39 @@ function createMemoryStore() {
         role,
         isPremium: Boolean(isPremium),
         providerServiceType: providerServiceType || null,
+        approvalStatus: approvalStatus ? String(approvalStatus) : 'pending',
+        approvalReason: null,
+        approvedAt: null,
         createdAt: nowIso(),
       };
       db.users.push(user);
       db._persistSoon();
       return user;
+    },
+
+    listUsers({ status } = {}) {
+      let items = db.users.slice();
+      if (status) {
+        items = items.filter((u) => String(u.approvalStatus || 'pending') === String(status));
+      }
+      items.sort((a, b) => Number(b.userId) - Number(a.userId));
+      return items;
+    },
+
+    setUserApproval({ userId, status, reason }) {
+      const finalStatus = String(status);
+      if (!['pending', 'approved', 'rejected'].includes(finalStatus)) {
+        throw new Error('invalid status');
+      }
+
+      const u = db.users.find((x) => String(x.userId) === String(userId));
+      if (!u) throw new Error('user not found');
+
+      u.approvalStatus = finalStatus;
+      u.approvalReason = reason ? String(reason) : null;
+      u.approvedAt = finalStatus === 'approved' ? nowIso() : null;
+      db._persistSoon();
+      return u;
     },
 
     findUserByEmail(email) {

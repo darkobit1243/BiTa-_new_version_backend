@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=8080
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
       # - LOG_REQUESTS=true
       # Optional: persist mock data to disk
       # - PERSIST_DB=true

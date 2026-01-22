@@ -4,9 +4,11 @@ const cors = require('cors');
 const authRoutes = require('./src/routes/auth');
 const listingsRoutes = require('./src/routes/listings');
 const usersRoutes = require('./src/routes/users');
+const adminRoutes = require('./src/routes/admin');
 const os = require('os');
 
 const { store } = require('./src/store/store');
+const { requireAdmin } = require('./src/middleware/adminAuth');
 
 const app = express();
 
@@ -27,6 +29,10 @@ app.get('/health', (req, res) => {
   Promise.resolve(store.stats())
     .then((stats) => res.json({ data: { ok: true, ...stats } }))
     .catch(() => res.json({ data: { ok: true } }));
+});
+
+app.get('/me', requireAdmin, (req, res) => {
+  res.json({ data: { ok: true, isAdmin: true } });
 });
 
 // Optional debug endpoint (disabled by default).
@@ -51,6 +57,7 @@ if (['1', 'true', 'yes', 'on'].includes(String(process.env.ENABLE_DEBUG_ENDPOINT
 app.use('/auth', authRoutes);
 app.use('/listings', listingsRoutes);
 app.use('/users', usersRoutes);
+app.use('/admin', adminRoutes);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 8080;
 const host = (process.env.HOST && String(process.env.HOST).trim()) ? String(process.env.HOST).trim() : '0.0.0.0';

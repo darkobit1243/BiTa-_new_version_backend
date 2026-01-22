@@ -25,6 +25,8 @@ services:
       HOST: 0.0.0.0
       STORE: postgres
       DATABASE_URL: postgres://bita:bita_password@db:5432/bita
+      ADMIN_EMAILS: ${ADMIN_EMAILS}
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
       # LOG_REQUESTS: "true"
     depends_on:
       db:

@@ -1,4 +1,5 @@
 const { store } = require('../store/store');
+const { isAdminEmail } = require('../utils/admin');
 
 function sessionFromUser(user) {
   return {
@@ -8,6 +9,8 @@ function sessionFromUser(user) {
     role: user.role,
     isPremium: user.isPremium,
     providerServiceType: user.providerServiceType,
+    approvalStatus: user.approvalStatus || 'pending',
+    isAdmin: isAdminEmail(user.email),
   };
 }
 
@@ -21,12 +24,14 @@ async function login(req, res) {
   let user = await store.findUserByEmail(email);
   if (!user) {
     const isPremium = String(email).toLowerCase().includes('premium');
+    const admin = isAdminEmail(email);
     user = await store.createUser({
       email: String(email),
       name: 'Demo Kullanıcı',
       role: String(role),
       isPremium,
       providerServiceType: role === 'provider' ? 'vehicle' : null,
+      approvalStatus: admin ? 'approved' : 'pending',
     });
   }
 
@@ -46,6 +51,7 @@ async function register(req, res) {
 
   const membershipType = String(body.membershipType || '').toLowerCase();
   const isPremium = membershipType === 'premium';
+  const admin = isAdminEmail(body.email);
 
   const user = await store.createUser({
     email: String(body.email),
@@ -53,6 +59,7 @@ async function register(req, res) {
     role: String(body.role),
     isPremium,
     providerServiceType: body.providerServiceType || null,
+    approvalStatus: admin ? 'approved' : 'pending',
   });
 
   return res.status(201).json({ data: sessionFromUser(user) });

@@ -13,6 +13,9 @@ function mapUserRow(row) {
     role: row.role,
     isPremium: Boolean(row.is_premium),
     providerServiceType: row.provider_service_type,
+    approvalStatus: row.approval_status || 'pending',
+    approvalReason: row.approval_reason || null,
+    approvedAt: row.approved_at ? new Date(row.approved_at).toISOString() : null,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
   };
 }
@@ -125,6 +128,11 @@ async function runMigrations(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY(user_id, offer_id)
     );
+
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'pending';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_reason TEXT NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
   `);
 }
 
@@ -191,14 +199,49 @@ function createPostgresStore() {
       return mapUserRow(rows[0]);
     },
 
-    async createUser({ email, name, role, isPremium, providerServiceType }) {
+    async createUser({ email, name, role, isPremium, providerServiceType, approvalStatus }) {
       const { rows } = await pool.query(
-        `INSERT INTO users (email, name, role, is_premium, provider_service_type)
-         VALUES ($1,$2,$3,$4,$5)
+        `INSERT INTO users (email, name, role, is_premium, provider_service_type, approval_status)
+         VALUES ($1,$2,$3,$4,$5,$6)
          RETURNING *`,
-        [String(email), String(name), String(role), Boolean(isPremium), providerServiceType || null],
+        [String(email), String(name), String(role), Boolean(isPremium), providerServiceType || null, approvalStatus ? String(approvalStatus) : 'pending'],
       );
       return mapUserRow(rows[0]);
+    },
+
+    async listUsers({ status } = {}) {
+      const params = [];
+      const where = [];
+      if (status) {
+        params.push(String(status));
+        where.push(`approval_status = $${params.length}`);
+      }
+
+      const sql = `SELECT * FROM users ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY user_id DESC LIMIT 200`;
+      const { rows } = await pool.query(sql, params);
+      return rows.map(mapUserRow);
+    },
+
+    async setUserApproval({ userId, status, reason }) {
+      const finalStatus = String(status);
+      if (!['pending', 'approved', 'rejected'].includes(finalStatus)) {
+        throw new Error('invalid status');
+      }
+
+      const { rows } = await pool.query(
+        `UPDATE users
+         SET approval_status=$2,
+             approval_reason=$3,
+             approved_at = CASE WHEN $2='approved' THEN now() ELSE NULL END,
+             updated_at = now()
+         WHERE user_id=$1
+         RETURNING *`,
+        [Number(userId), finalStatus, reason ? String(reason) : null],
+      );
+
+      const user = mapUserRow(rows[0]);
+      if (!user) throw new Error('user not found');
+      return user;
     },
 
     async createListing(payload) {
