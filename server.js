@@ -25,7 +25,7 @@ if (String(process.env.LOG_REQUESTS || '').toLowerCase() === 'true') {
 }
 
 // Debug endpoint
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
   Promise.resolve()
     .then(async () => {
       let meta = { store: 'unknown' };
@@ -63,7 +63,7 @@ app.get('/health', (req, res) => {
 
 // Minimal identity endpoint for admin panel.
 // If ADMIN_TOKEN is set, requires Authorization: Bearer <ADMIN_TOKEN>
-app.get('/me', requireAdmin, (req, res) => {
+app.get(['/me', '/api/me'], requireAdmin, (req, res) => {
   res.json({ data: { ok: true, isAdmin: true } });
 });
 
@@ -91,9 +91,16 @@ if (['1', 'true', 'yes', 'on'].includes(String(process.env.ENABLE_DEBUG_ENDPOINT
 }
 
 app.use('/auth', authRoutes);
+app.use('/api/auth', authRoutes);
+
 app.use('/listings', listingsRoutes);
+app.use('/api/listings', listingsRoutes);
+
 app.use('/users', usersRoutes);
+app.use('/api/users', usersRoutes);
+
 app.use('/admin', adminRoutes);
+app.use('/api/admin', adminRoutes);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 8080;
 const host = (process.env.HOST && String(process.env.HOST).trim()) ? String(process.env.HOST).trim() : '0.0.0.0';
