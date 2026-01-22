@@ -134,7 +134,7 @@ function createMemoryStore() {
       return { users: db.users.length, listings: db.listings.length };
     },
 
-    createUser({ email, name, role, isPremium, providerServiceType, approvalStatus }) {
+    createUser({ email, name, role, isPremium, providerServiceType, approvalStatus, passwordHash }) {
       const user = {
         userId: String(nextUserId++),
         email,
@@ -146,6 +146,11 @@ function createMemoryStore() {
         approvalReason: null,
         approvedAt: null,
         createdAt: nowIso(),
+
+        // auth
+        passwordHash: passwordHash || null,
+        resetTokenHash: null,
+        resetTokenExpiresAt: null,
       };
       db.users.push(user);
       db._persistSoon();
@@ -183,6 +188,49 @@ function createMemoryStore() {
 
     findUserByEmail(email) {
       return db.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase());
+    },
+
+    async findUserByEmail(email, { includeAuth } = {}) {
+      const v = String(email || '').toLowerCase();
+      const user = db.users.find((u) => String(u.email || '').toLowerCase() === v) || null;
+      if (!user) return null;
+      if (includeAuth) return user;
+      // default: do not leak auth fields
+      // eslint-disable-next-line no-unused-vars
+      const { passwordHash, resetTokenHash, resetTokenExpiresAt, ...safe } = user;
+      return safe;
+    },
+
+    async setUserPassword({ userId, passwordHash }) {
+      const u = db.users.find((x) => String(x.userId) === String(userId));
+      if (!u) return null;
+      u.passwordHash = passwordHash || null;
+      db._persistSoon();
+      // eslint-disable-next-line no-unused-vars
+      const { passwordHash: _ph, resetTokenHash, resetTokenExpiresAt, ...safe } = u;
+      return safe;
+    },
+
+    async setUserResetToken({ userId, resetTokenHash, resetTokenExpiresAt }) {
+      const u = db.users.find((x) => String(x.userId) === String(userId));
+      if (!u) return null;
+      u.resetTokenHash = resetTokenHash || null;
+      u.resetTokenExpiresAt = resetTokenExpiresAt || null;
+      db._persistSoon();
+      // eslint-disable-next-line no-unused-vars
+      const { passwordHash, resetTokenHash: _th, resetTokenExpiresAt: _te, ...safe } = u;
+      return safe;
+    },
+
+    async clearUserResetToken({ userId }) {
+      const u = db.users.find((x) => String(x.userId) === String(userId));
+      if (!u) return null;
+      u.resetTokenHash = null;
+      u.resetTokenExpiresAt = null;
+      db._persistSoon();
+      // eslint-disable-next-line no-unused-vars
+      const { passwordHash, resetTokenHash, resetTokenExpiresAt, ...safe } = u;
+      return safe;
     },
 
     createListing(payload) {

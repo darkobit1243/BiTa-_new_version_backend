@@ -24,6 +24,17 @@ function mapUserRow(row) {
   };
 }
 
+function mapUserAuthRow(row) {
+  const user = mapUserRow(row);
+  if (!user) return null;
+  return {
+    ...user,
+    passwordHash: row.password_hash || null,
+    resetTokenHash: row.reset_token_hash || null,
+    resetTokenExpiresAt: row.reset_token_expires_at ? new Date(row.reset_token_expires_at).toISOString() : null,
+  };
+}
+
 function mapListingRow(row) {
   if (!row) return null;
   return {
@@ -137,6 +148,10 @@ async function runMigrations(pool) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_reason TEXT NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_hash TEXT NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMPTZ NULL;
   `);
 }
 
@@ -232,17 +247,66 @@ function createPostgresStore() {
       return { users: u.rows[0]?.c || 0, listings: l.rows[0]?.c || 0 };
     },
 
-    async findUserByEmail(email) {
+    async findUserByEmail(email, { includeAuth } = {}) {
       const { rows } = await pool.query('SELECT * FROM users WHERE lower(email)=lower($1) LIMIT 1', [String(email)]);
+      return includeAuth ? mapUserAuthRow(rows[0]) : mapUserRow(rows[0]);
+    },
+
+    async createUser({ email, name, role, isPremium, providerServiceType, approvalStatus, passwordHash }) {
+      const { rows } = await pool.query(
+        `INSERT INTO users (email, name, role, is_premium, provider_service_type, approval_status, password_hash)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         RETURNING *`,
+        [
+          String(email),
+          String(name),
+          String(role),
+          Boolean(isPremium),
+          providerServiceType || null,
+          approvalStatus ? String(approvalStatus) : 'pending',
+          passwordHash ? String(passwordHash) : null,
+        ],
+      );
       return mapUserRow(rows[0]);
     },
 
-    async createUser({ email, name, role, isPremium, providerServiceType, approvalStatus }) {
+    async setUserPassword({ userId, passwordHash }) {
       const { rows } = await pool.query(
-        `INSERT INTO users (email, name, role, is_premium, provider_service_type, approval_status)
-         VALUES ($1,$2,$3,$4,$5,$6)
+        `UPDATE users
+         SET password_hash=$2, updated_at=now()
+         WHERE user_id=$1
          RETURNING *`,
-        [String(email), String(name), String(role), Boolean(isPremium), providerServiceType || null, approvalStatus ? String(approvalStatus) : 'pending'],
+        [Number(userId), passwordHash ? String(passwordHash) : null],
+      );
+      return mapUserRow(rows[0]);
+    },
+
+    async setUserResetToken({ userId, resetTokenHash, resetTokenExpiresAt }) {
+      const { rows } = await pool.query(
+        `UPDATE users
+         SET reset_token_hash=$2,
+             reset_token_expires_at=$3,
+             updated_at=now()
+         WHERE user_id=$1
+         RETURNING *`,
+        [
+          Number(userId),
+          resetTokenHash ? String(resetTokenHash) : null,
+          resetTokenExpiresAt ? new Date(resetTokenExpiresAt).toISOString() : null,
+        ],
+      );
+      return mapUserRow(rows[0]);
+    },
+
+    async clearUserResetToken({ userId }) {
+      const { rows } = await pool.query(
+        `UPDATE users
+         SET reset_token_hash=NULL,
+             reset_token_expires_at=NULL,
+             updated_at=now()
+         WHERE user_id=$1
+         RETURNING *`,
+        [Number(userId)],
       );
       return mapUserRow(rows[0]);
     },
