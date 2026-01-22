@@ -1,4 +1,4 @@
-name: Deploy to VPS
+name: Deploy Backend to VPS
 
 on:
   push:
@@ -10,80 +10,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate deploy secrets
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -z "${{ secrets.VPS_HOST }}" ]; then
-            echo "Missing GitHub Secret: VPS_HOST" >&2
-            exit 1
-          fi
-          if [ -z "${{ secrets.VPS_USER }}" ]; then
-            echo "Missing GitHub Secret: VPS_USER" >&2
-            exit 1
-          fi
-          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
-            echo "Missing GitHub Secret: VPS_SSH_KEY" >&2
-            exit 1
-          fi
-
-          echo "Secrets look set. Continuing."
-
-      - name: Deploy to VPS (git + docker compose)
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
-        env:
-          APP_DIR: ${{ secrets.VPS_APP_DIR }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22667 }}
-          envs: APP_DIR
+          port: ${{ secrets.VPS_PORT }}
           script: |
-            set -euo pipefail
+            set -e
 
-            APP_DIR="${APP_DIR:-/home/bitasi/apps/bitasi}"
-            echo "==> Deploying in: ${APP_DIR}"
+            echo "==> Go to app directory"
+            cd /home/bitasi/apps/bitasi
 
-            cd "$APP_DIR"
-
-            if [ ! -d .git ]; then
-              echo "ERROR: $APP_DIR is not a git repo" >&2
-              pwd
-              ls -la
-              exit 1
-            fi
-
+            echo "==> Update code"
             git fetch origin main
             git reset --hard origin/main
 
-            if [ ! -f docker-compose.yml ]; then
-              echo "ERROR: docker-compose.yml not found in $APP_DIR" >&2
-              ls -la
-              exit 1
-            fi
+            echo "==> Restart containers"
+            docker-compose down
+            docker-compose up -d --build
 
-            echo "==> Docker diagnostics"
-            docker --version || true
-            docker compose version || true
-            docker-compose --version || true
+            echo "==> Health check"
+            curl -fsS http://127.0.0.1:8080/health || true
 
-            if docker compose version >/dev/null 2>&1; then
-              COMPOSE="docker compose"
-            elif docker-compose --version >/dev/null 2>&1; then
-              COMPOSE="docker-compose"
-            else
-              echo "ERROR: Neither 'docker compose' nor 'docker-compose' is available on the VPS." >&2
-              echo "Install Docker Compose plugin, or install docker-compose binary." >&2
-              exit 1
-            fi
-
-            echo "==> Using compose command: $COMPOSE"
-            $COMPOSE up -d --build --remove-orphans
-
-            echo "==> Health check (best-effort)"
-            curl -fsS http://127.0.0.1:8080/health | head -c 200 || true
-
-            echo "==> Containers"
-            $COMPOSE ps || true
+            echo "==> Done"
