@@ -11,15 +11,10 @@ function getAdminEmails() {
   const list = parseList(process.env.ADMIN_EMAILS);
   const all = [single, ...list].filter(Boolean);
   if (all.length === 0) {
-<<<<<<< HEAD
-    all.push('admin@bitasi.com.tr');
-  }
-=======
     // Safe default for quick setup (can be overridden via env).
     all.push('admin@bitasi.com.tr');
   }
   // Normalize to lowercase unique.
->>>>>>> d0de03c (Web sİTE)
   return Array.from(new Set(all.map((e) => e.toLowerCase())));
 }
 

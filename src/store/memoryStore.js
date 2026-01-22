@@ -162,10 +162,7 @@ function createMemoryStore() {
       if (status) {
         items = items.filter((u) => String(u.approvalStatus || 'pending') === String(status));
       }
-<<<<<<< HEAD
-=======
       // newest first
->>>>>>> d0de03c (Web sİTE)
       items.sort((a, b) => Number(b.userId) - Number(a.userId));
       return items;
     },

@@ -11,17 +11,11 @@ function normalizeStatus(v) {
 async function listUsers(req, res) {
   const status = normalizeStatus(req.query && req.query.status);
   const users = await store.listUsers({ status });
-<<<<<<< HEAD
-  const data = users.map((u) => ({ ...u, isAdmin: isAdminEmail(u.email) }));
-=======
-
   // Compute isAdmin from env config (temporary approach)
   const data = users.map((u) => ({
     ...u,
     isAdmin: isAdminEmail(u.email),
   }));
-
->>>>>>> d0de03c (Web sİTE)
   return res.json({ data });
 }
 
