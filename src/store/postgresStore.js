@@ -4,6 +4,10 @@ function truthy(v) {
   return ['1', 'true', 'yes', 'on'].includes(String(v || '').toLowerCase());
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function mapUserRow(row) {
   if (!row) return null;
   return {
@@ -142,14 +146,48 @@ function createPostgresStore() {
     throw new Error('Postgres store selected but DATABASE_URL is empty.');
   }
 
+  const max = Number(process.env.PG_POOL_MAX || 10);
+  const idleTimeoutMillis = Number(process.env.PG_IDLE_TIMEOUT_MS || 30000);
+  const connectionTimeoutMillis = Number(process.env.PG_CONN_TIMEOUT_MS || 5000);
+
   const pool = new Pool({
     connectionString,
     ssl: truthy(process.env.PGSSL) ? { rejectUnauthorized: false } : undefined,
+    max: Number.isFinite(max) && max > 0 ? max : 10,
+    idleTimeoutMillis: Number.isFinite(idleTimeoutMillis) && idleTimeoutMillis >= 0 ? idleTimeoutMillis : 30000,
+    connectionTimeoutMillis: Number.isFinite(connectionTimeoutMillis) && connectionTimeoutMillis >= 0 ? connectionTimeoutMillis : 5000,
+    keepAlive: truthy(process.env.PG_KEEPALIVE) ? true : undefined,
+  });
+
+  // IMPORTANT: Without an 'error' handler, some pg pool errors can crash the process.
+  pool.on('error', (err) => {
+    console.error('[pg] pool error (idle client):', err);
   });
 
   const store = {
     async init() {
-      await runMigrations(pool);
+      const retries = Number(process.env.PG_INIT_RETRIES || 12);
+      const delayMs = Number(process.env.PG_INIT_DELAY_MS || 2500);
+
+      let lastErr = null;
+      for (let attempt = 1; attempt <= Math.max(1, retries); attempt++) {
+        try {
+          await runMigrations(pool);
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
+          const msg = String(e && e.message ? e.message : e);
+          console.warn(`[pg] migrations failed (attempt ${attempt}/${retries}): ${msg}`);
+          if (attempt < retries) {
+            await sleep(Number.isFinite(delayMs) ? delayMs : 2500);
+          }
+        }
+      }
+
+      if (lastErr) {
+        throw lastErr;
+      }
 
       // Seed demo data once if empty
       const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM listings');

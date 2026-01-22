@@ -9,6 +9,12 @@ function extractBearer(req) {
 
 function requireAdmin(req, res, next) {
   const token = getAdminToken();
+<<<<<<< HEAD
+=======
+
+  // Dev-friendly fallback: if no ADMIN_TOKEN is configured, allow access.
+  // In production, set ADMIN_TOKEN and use it in the admin panel settings.
+>>>>>>> d0de03c (Web sİTE)
   if (!token) return next();
 
   const provided = extractBearer(req) || String(req.get('x-admin-token') || '').trim();

@@ -26,9 +26,45 @@ if (String(process.env.LOG_REQUESTS || '').toLowerCase() === 'true') {
 
 // Debug endpoint
 app.get('/health', (req, res) => {
-  Promise.resolve(store.stats())
-    .then((stats) => res.json({ data: { ok: true, ...stats } }))
-    .catch(() => res.json({ data: { ok: true } }));
+  Promise.resolve()
+    .then(async () => {
+      let meta = { store: 'unknown' };
+      let stats = null;
+      let dbOk = false;
+      let error = null;
+
+      try {
+        if (store && typeof store.dump === 'function') {
+          const dumped = await store.dump();
+          if (dumped && dumped.meta) meta = dumped.meta;
+          if (dumped && dumped.stats) stats = dumped.stats;
+          dbOk = true;
+        } else if (store && typeof store.stats === 'function') {
+          stats = await store.stats();
+          dbOk = true;
+        }
+      } catch (e) {
+        error = String(e && e.message ? e.message : e);
+        dbOk = false;
+      }
+
+      return res.json({
+        data: {
+          ok: true,
+          dbOk,
+          meta,
+          ...(stats || {}),
+          ...(error ? { error } : {}),
+        },
+      });
+    })
+    .catch(() => res.json({ data: { ok: true, dbOk: false, meta: { store: 'unknown' } } }));
+});
+
+// Minimal identity endpoint for admin panel.
+// If ADMIN_TOKEN is set, requires Authorization: Bearer <ADMIN_TOKEN>
+app.get('/me', requireAdmin, (req, res) => {
+  res.json({ data: { ok: true, isAdmin: true } });
 });
 
 app.get('/me', requireAdmin, (req, res) => {
