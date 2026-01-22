@@ -64,10 +64,26 @@ jobs:
               exit 1
             fi
 
-            docker compose up -d --build --remove-orphans
+            echo "==> Docker diagnostics"
+            docker --version || true
+            docker compose version || true
+            docker-compose --version || true
+
+            if docker compose version >/dev/null 2>&1; then
+              COMPOSE="docker compose"
+            elif docker-compose --version >/dev/null 2>&1; then
+              COMPOSE="docker-compose"
+            else
+              echo "ERROR: Neither 'docker compose' nor 'docker-compose' is available on the VPS." >&2
+              echo "Install Docker Compose plugin, or install docker-compose binary." >&2
+              exit 1
+            fi
+
+            echo "==> Using compose command: $COMPOSE"
+            $COMPOSE up -d --build --remove-orphans
 
             echo "==> Health check (best-effort)"
             curl -fsS http://127.0.0.1:8080/health | head -c 200 || true
 
             echo "==> Containers"
-            docker compose ps || true
+            $COMPOSE ps || true
