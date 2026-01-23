@@ -273,12 +273,12 @@ async function forgot(req, res) {
 
   // Always return OK to reduce enumeration.
   if (!emailNorm || !isValidEmail(emailNorm)) {
-    return res.json({ data: { ok: true, sent: true } });
+    return res.json({ data: { ok: true, sent: false } });
   }
 
   const user = await store.findUserByEmail(emailNorm);
   if (!user) {
-    return res.json({ data: { ok: true, sent: true } });
+    return res.json({ data: { ok: true, sent: false } });
   }
 
   const otp = generateOtp();
