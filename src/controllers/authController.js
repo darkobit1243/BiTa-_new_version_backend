@@ -80,16 +80,72 @@ async function sendResetEmail({ to, otp }) {
   const mailer = getMailer();
   if (!mailer || !cfg.from) return { sent: false };
 
-  const subject = 'BiTaşı • Şifre Sıfırlama Kodu';
+  const brandName = String(process.env.BRAND_NAME || 'BiTaşı');
+  const logoUrl = String(process.env.BRAND_LOGO_URL || '').trim();
+  const supportEmail = String(process.env.SUPPORT_EMAIL || cfg.from || '').trim();
+
+  const subject = `${brandName} • Şifre Sıfırlama Kodu`;
   const text =
     `Şifre sıfırlama isteği alındı.\n\n` +
     `Şifre sıfırlama kodun: ${otp}\n` +
     `Kod 10 dakika geçerlidir.\n\n` +
     `Bu işlem sana ait değilse bu maili yok sayabilirsin.\n\n` +
-    `BiTaşı`;
+    `${brandName}`;
+
+  const logoHtml = logoUrl
+    ? `<img src="${logoUrl}" alt="${brandName}" width="140" style="display:block;border:0;outline:none;text-decoration:none;">`
+    : `<div style="font-weight:700;font-size:20px;color:#111827;">${brandName}</div>`;
+
+  const html = `
+  <div style="margin:0;padding:0;background:#f5f6f8;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f5f6f8;padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="520" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,0.08);">
+            <tr>
+              <td style="padding:24px 24px 16px;">
+                ${logoHtml}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 24px 16px;color:#111827;font-size:18px;font-weight:700;">
+                Şifrenizi Sıfırlayın
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 24px 20px;color:#4b5563;font-size:14px;line-height:1.6;">
+                Şifre sıfırlama isteği aldık. Aşağıdaki tek kullanımlık kodu girerek yeni şifrenizi belirleyebilirsiniz.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 24px 24px;">
+                <div style="background:#f3f4f6;border-radius:12px;padding:16px 18px;text-align:center;letter-spacing:6px;font-size:24px;font-weight:700;color:#111827;">
+                  ${otp}
+                </div>
+                <div style="margin-top:10px;color:#6b7280;font-size:12px;text-align:center;">
+                  Kod 10 dakika geçerlidir.
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 24px 20px;color:#6b7280;font-size:12px;line-height:1.6;">
+                Bu işlemi sen başlatmadıysan bu e-postayı görmezden gelebilirsin.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 24px 24px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:11px;">
+                Destek: ${supportEmail}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </div>
+  `;
 
   try {
-    await mailer.sendMail({ from: cfg.from, to, subject, text });
+    await mailer.sendMail({ from: cfg.from, to, subject, text, html });
     return { sent: true };
   } catch (e) {
     console.error('[auth] reset email send failed:', e);
