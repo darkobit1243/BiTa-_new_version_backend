@@ -3,10 +3,28 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       - PORT=8080
       - ADMIN_EMAILS=${ADMIN_EMAILS}
       - ADMIN_TOKEN=${ADMIN_TOKEN}
+
+      # SMTP (forgot/reset password)
+      # NOTE: define these in the VPS-local .env (do NOT commit secrets)
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_SECURE=${SMTP_SECURE}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+
+      # Reset link base (where the user lands to complete reset)
+      # Examples: https://www.bitasi.com.tr/  or  https://portal.bitasi.com.tr/
+      - RESET_URL_BASE=${RESET_URL_BASE}
+      # Backward-compatible aliases used by the backend
+      - ADMIN_PANEL_URL=${ADMIN_PANEL_URL}
+      - PUBLIC_WEB_URL=${PUBLIC_WEB_URL}
       # - LOG_REQUESTS=true
       # Optional: persist mock data to disk
       # - PERSIST_DB=true
