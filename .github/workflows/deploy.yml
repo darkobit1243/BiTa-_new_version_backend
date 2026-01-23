@@ -104,7 +104,12 @@ jobs:
 
             echo "==> Restart containers ($COMPOSE)"
             $COMPOSE -f "$COMPOSE_FILE" down --remove-orphans || true
-            $COMPOSE -f "$COMPOSE_FILE" up -d --build --remove-orphans --force-recreate
+            RECREATE_FLAG=""
+            if [ "$COMPOSE" = "docker compose" ]; then
+              # Compose v2 supports reliable recreation; v1 can crash on some Docker versions.
+              RECREATE_FLAG="--force-recreate"
+            fi
+            $COMPOSE -f "$COMPOSE_FILE" up -d --build --remove-orphans $RECREATE_FLAG
 
             echo "==> Containers"
             $COMPOSE -f "$COMPOSE_FILE" ps || true
