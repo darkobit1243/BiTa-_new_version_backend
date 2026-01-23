@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 function truthy(v) {
   return ['1', 'true', 'yes', 'on'].includes(String(v || '').toLowerCase());
@@ -9,6 +10,10 @@ function truthy(v) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function cryptoRandomId() {
+  return crypto.randomBytes(16).toString('hex');
 }
 
 function ensureParentDir(filePath) {
@@ -88,6 +93,7 @@ function createMemoryStore() {
     listings: [],
     offersByListingId: new Map(),
     unlockedOfferIdsByUserId: new Map(),
+    passwordResetTokens: [],
 
     dump() {
       const { offersByListingId, unlockedOfferIdsByUserId } = serializeMaps(db);
@@ -107,6 +113,7 @@ function createMemoryStore() {
         listings: db.listings,
         offersByListingId,
         unlockedOfferIdsByUserId,
+        passwordResetTokens: db.passwordResetTokens,
         next: { nextUserId, nextListingId, nextOfferId },
       };
     },
@@ -228,6 +235,41 @@ function createMemoryStore() {
       // eslint-disable-next-line no-unused-vars
       const { passwordHash, resetTokenHash, resetTokenExpiresAt, ...safe } = u;
       return safe;
+    },
+
+    async createPasswordResetToken({ userId, otpHash, expiresAt }) {
+      const token = {
+        id: String(cryptoRandomId()),
+        userId: String(userId),
+        otpHash: String(otpHash),
+        expiresAt: String(expiresAt),
+        used: false,
+        createdAt: nowIso(),
+      };
+      db.passwordResetTokens.push(token);
+      db._persistSoon();
+      return token;
+    },
+
+    async findValidPasswordResetToken({ userId, otpHash }) {
+      const now = Date.now();
+      const token = [...db.passwordResetTokens]
+        .reverse()
+        .find((t) =>
+          String(t.userId) === String(userId) &&
+          String(t.otpHash) === String(otpHash) &&
+          !t.used &&
+          Date.parse(String(t.expiresAt)) > now,
+        );
+      return token || null;
+    },
+
+    async markPasswordResetTokenUsed({ tokenId }) {
+      const t = db.passwordResetTokens.find((x) => String(x.id) === String(tokenId));
+      if (!t) return null;
+      t.used = true;
+      db._persistSoon();
+      return t;
     },
 
     createListing(payload) {

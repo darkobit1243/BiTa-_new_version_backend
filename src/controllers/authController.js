@@ -12,6 +12,10 @@ function sha256Hex(input) {
   return crypto.createHash('sha256').update(String(input || '')).digest('hex');
 }
 
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
@@ -22,33 +26,19 @@ function isValidEmail(email) {
   return v.includes('@') && v.includes('.') && v.length >= 6;
 }
 
-function getResetTokenTtlMs() {
-  const mins = Number(process.env.RESET_TOKEN_TTL_MIN || 30);
-  const m = Number.isFinite(mins) && mins > 0 ? mins : 30;
+function getResetOtpTtlMs() {
+  const mins = Number(process.env.RESET_OTP_TTL_MIN || 10);
+  const m = Number.isFinite(mins) && mins > 0 ? mins : 10;
   return m * 60 * 1000;
 }
 
-function getResetUrlBase() {
-  return String(
-    process.env.RESET_URL_BASE ||
-      process.env.ADMIN_PANEL_URL ||
-      process.env.PUBLIC_WEB_URL ||
-      '',
-  ).trim();
-}
-
-function buildResetLink({ token, email }) {
-  const base = getResetUrlBase();
-  if (!base) return null;
-  try {
-    const url = new URL(base);
-    url.searchParams.set('reset', '1');
-    url.searchParams.set('token', String(token));
-    url.searchParams.set('email', String(email));
-    return url.toString();
-  } catch (_) {
-    return null;
-  }
+function getResetOtpRateLimit() {
+  const max = Number(process.env.RESET_OTP_RATE_LIMIT_MAX || 5);
+  const windowMin = Number(process.env.RESET_OTP_RATE_LIMIT_WINDOW_MIN || 15);
+  return {
+    max: Number.isFinite(max) && max > 0 ? max : 5,
+    windowMs: (Number.isFinite(windowMin) && windowMin > 0 ? windowMin : 15) * 60 * 1000,
+  };
 }
 
 let _mailer = null;
@@ -85,17 +75,18 @@ function getMailer() {
   return _mailer;
 }
 
-async function sendResetEmail({ to, link }) {
+async function sendResetEmail({ to, otp }) {
   const cfg = smtpConfig();
   const mailer = getMailer();
   if (!mailer || !cfg.from) return { sent: false };
 
-  const subject = 'BiTaşı • Şifre Sıfırlama';
+  const subject = 'BiTaşı • Şifre Sıfırlama Kodu';
   const text =
     `Şifre sıfırlama isteği alındı.\n\n` +
+    `Şifre sıfırlama kodun: ${otp}\n` +
+    `Kod 10 dakika geçerlidir.\n\n` +
     `Bu işlem sana ait değilse bu maili yok sayabilirsin.\n\n` +
-    (link ? `Şifre sıfırlama linki: ${link}\n` : `Reset linki yapılandırılmadı.\n`) +
-    `\nBiTaşı`;
+    `BiTaşı`;
 
   try {
     await mailer.sendMail({ from: cfg.from, to, subject, text });
@@ -205,53 +196,83 @@ async function forgot(req, res) {
   const { email } = req.body || {};
   const emailNorm = normalizeEmail(email);
 
+  const { max, windowMs } = getResetOtpRateLimit();
+  const ip = String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim();
+  const rateKey = `${ip}:${emailNorm || 'unknown'}`;
+
+  if (!global.__otpRateLimiter) {
+    global.__otpRateLimiter = new Map();
+  }
+
+  const limiter = global.__otpRateLimiter;
+  const now = Date.now();
+  const bucket = limiter.get(rateKey) || [];
+  const recent = bucket.filter((ts) => now - ts < windowMs);
+  if (recent.length >= max) {
+    limiter.set(rateKey, recent);
+    return res.json({ data: { ok: true, sent: true } });
+  }
+  recent.push(now);
+  limiter.set(rateKey, recent);
+
   // Always return OK to reduce enumeration.
   if (!emailNorm || !isValidEmail(emailNorm)) {
-    return res.json({ data: { ok: true, sent: false } });
+    return res.json({ data: { ok: true, sent: true } });
   }
 
   const user = await store.findUserByEmail(emailNorm);
   if (!user) {
-    return res.json({ data: { ok: true, sent: false } });
+    return res.json({ data: { ok: true, sent: true } });
   }
 
-  const token = crypto.randomBytes(32).toString('hex');
-  const resetTokenHash = sha256Hex(token);
-  const resetTokenExpiresAt = new Date(Date.now() + getResetTokenTtlMs()).toISOString();
-  await store.setUserResetToken({ userId: user.userId, resetTokenHash, resetTokenExpiresAt });
+  const otp = generateOtp();
+  const otpHash = sha256Hex(otp);
+  const expiresAt = new Date(Date.now() + getResetOtpTtlMs()).toISOString();
 
-  const link = buildResetLink({ token, email: emailNorm });
-  const { sent } = await sendResetEmail({ to: emailNorm, link });
-  return res.json({ data: { ok: true, sent } });
+  if (store.createPasswordResetToken) {
+    await store.createPasswordResetToken({ userId: user.userId, otpHash, expiresAt });
+  }
+
+  await sendResetEmail({ to: emailNorm, otp });
+  return res.json({ data: { ok: true, sent: true } });
 }
 
 async function reset(req, res) {
-  const { email, token, password } = req.body || {};
+  const { email, otp, newPassword, token, password } = req.body || {};
   const emailNorm = normalizeEmail(email);
 
-  if (!emailNorm || !token || !password) {
-    return res.status(400).json({ data: { error: 'email/token/password required' } });
+  const finalOtp = String(otp || '').trim() || String(token || '').trim();
+  const finalPassword = String(newPassword || '').trim() || String(password || '').trim();
+
+  if (!emailNorm || !finalOtp || !finalPassword) {
+    return res.status(400).json({ data: { error: 'email/otp/newPassword required' } });
   }
 
-  if (String(password).length < 6) {
+  if (String(finalPassword).length < 6) {
     return res.status(400).json({ data: { error: 'password must be at least 6 chars' } });
   }
 
   const user = await store.findUserByEmail(emailNorm, { includeAuth: true });
-  if (!user || !user.resetTokenHash || !user.resetTokenExpiresAt) {
-    return res.status(400).json({ data: { error: 'invalid or expired token' } });
+  if (!user) {
+    return res.status(400).json({ data: { error: 'invalid or expired code' } });
   }
 
-  const expected = String(user.resetTokenHash);
-  const actual = sha256Hex(token);
-  const expMs = Date.parse(String(user.resetTokenExpiresAt));
-  if (!expected || expected !== actual || !Number.isFinite(expMs) || expMs < Date.now()) {
-    return res.status(400).json({ data: { error: 'invalid or expired token' } });
+  const otpHash = sha256Hex(finalOtp);
+  if (!store.findValidPasswordResetToken) {
+    return res.status(500).json({ data: { error: 'reset token store not configured' } });
   }
 
-  const passwordHash = await bcrypt.hash(String(password), 10);
+  const tokenRow = await store.findValidPasswordResetToken({ userId: user.userId, otpHash });
+  if (!tokenRow) {
+    return res.status(400).json({ data: { error: 'invalid or expired code' } });
+  }
+
+  const passwordHash = await bcrypt.hash(String(finalPassword), 10);
   await store.setUserPassword({ userId: user.userId, passwordHash });
-  await store.clearUserResetToken({ userId: user.userId });
+
+  if (store.markPasswordResetTokenUsed) {
+    await store.markPasswordResetTokenUsed({ tokenId: tokenRow.id });
+  }
 
   return res.json({ data: { ok: true } });
 }

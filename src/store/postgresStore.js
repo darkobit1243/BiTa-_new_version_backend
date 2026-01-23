@@ -161,6 +161,17 @@ async function runMigrations(pool) {
     ALTER TABLE offers ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ NULL;
     ALTER TABLE offers ADD COLUMN IF NOT EXISTS accepted_by TEXT NULL;
     ALTER TABLE offers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      otp_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
   `);
 }
 
@@ -284,6 +295,38 @@ function createPostgresStore() {
         [Number(userId)],
       );
       return mapUserRow(rows[0]);
+    },
+
+    async createPasswordResetToken({ userId, otpHash, expiresAt }) {
+      const { rows } = await pool.query(
+        `INSERT INTO password_reset_tokens (user_id, otp_hash, expires_at)
+         VALUES ($1, $2, $3)
+         RETURNING *`,
+        [Number(userId), String(otpHash), new Date(expiresAt).toISOString()],
+      );
+      return rows[0] || null;
+    },
+
+    async findValidPasswordResetToken({ userId, otpHash }) {
+      const { rows } = await pool.query(
+        `SELECT * FROM password_reset_tokens
+         WHERE user_id=$1 AND otp_hash=$2 AND used=false AND expires_at > now()
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [Number(userId), String(otpHash)],
+      );
+      return rows[0] || null;
+    },
+
+    async markPasswordResetTokenUsed({ tokenId }) {
+      const { rows } = await pool.query(
+        `UPDATE password_reset_tokens
+         SET used=true
+         WHERE id=$1
+         RETURNING *`,
+        [String(tokenId)],
+      );
+      return rows[0] || null;
     },
 
     async listUsers({ status } = {}) {
