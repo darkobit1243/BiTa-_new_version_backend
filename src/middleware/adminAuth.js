@@ -15,7 +15,15 @@ function requireAdmin(req, res, next) {
 
   const provided = extractBearer(req) || String(req.get('x-admin-token') || '').trim();
   if (!provided || provided !== token) {
-    return res.status(401).json({ data: { error: 'unauthorized' } });
+    // Do not leak token; provide minimal diagnostics to help config issues.
+    return res.status(401).json({
+      data: {
+        error: 'unauthorized',
+        hasAdminTokenConfigured: true,
+        hasProvidedToken: Boolean(provided),
+        providedTokenLength: provided ? String(provided).length : 0,
+      },
+    });
   }
 
   return next();
