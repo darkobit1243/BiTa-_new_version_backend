@@ -104,7 +104,7 @@ jobs:
 
             echo "==> Restart containers ($COMPOSE)"
             $COMPOSE -f "$COMPOSE_FILE" down --remove-orphans || true
-            $COMPOSE -f "$COMPOSE_FILE" up -d --build --remove-orphans
+            $COMPOSE -f "$COMPOSE_FILE" up -d --build --remove-orphans --force-recreate
 
             echo "==> Containers"
             $COMPOSE -f "$COMPOSE_FILE" ps || true
