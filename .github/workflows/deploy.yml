@@ -59,6 +59,20 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
+            echo "==> Ensure .env exists (VPS-local config)"
+            if [ ! -f .env ]; then
+              if [ -f .env.example ]; then
+                cp .env.example .env
+                chmod 600 .env || true
+                echo "Created .env from .env.example. Edit .env on the VPS to set SMTP/admin secrets."
+              else
+                # Keep docker-compose from failing on missing env_file
+                touch .env
+                chmod 600 .env || true
+                echo "Created empty .env. Edit .env on the VPS to set SMTP/admin secrets."
+              fi
+            fi
+
             echo "==> Pick compose command"
             if docker compose version >/dev/null 2>&1; then
               COMPOSE="docker compose"
