@@ -16,6 +16,9 @@ pnpm-debug.log*
 .env
 .env.*
 
+# allow committing an example env template
+!.env.example
+
 # local data / persistence
 /data/
 

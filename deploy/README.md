@@ -170,3 +170,11 @@ sudo ufw allow 443/tcp
 ```bash
 curl http://127.0.0.1:8080/health
 ```
+
+## SMTP (Forgot/Reset password)
+
+If you want `/auth/forgot` to actually send emails, create an `.env` file on the VPS next to `docker-compose.yml`.
+
+- Start from `.env.example` in the repo
+- Set at least: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`
+- Set `RESET_URL_BASE` to your portal URL (where the reset screen lives)

@@ -88,6 +88,14 @@ docker compose up --build
 
 On a VPS, run the same compose file and open port `8080` (or put it behind Nginx/Caddy and expose `443`).
 
+### SMTP (Forgot/Reset password)
+
+This backend can send password reset emails via SMTP (Nodemailer). Configure it via environment variables.
+
+- Template: `.env.example` (copy to `.env` on the VPS)
+- Required for sending: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`
+- Recommended: `SMTP_FROM` and `RESET_URL_BASE`
+
 If Docker is not available, see `deploy/README.md` for a systemd-based deployment.
 
 ## Implemented endpoints
