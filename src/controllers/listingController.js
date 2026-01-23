@@ -26,7 +26,7 @@ function sendStoreError(res, err) {
 }
 
 async function feed(req, res) {
-  const { userRole, serviceType, adType, originCityId, destinationCityId } = req.query || {};
+  const { userRole, serviceType, adType, originCityId, destinationCityId, includeAcceptedOwnerId } = req.query || {};
 
   const list = await store.listFeed({
     userRole,
@@ -34,6 +34,7 @@ async function feed(req, res) {
     adType,
     originCityId,
     destinationCityId,
+    includeAcceptedOwnerId,
   });
 
   return res.json({ data: list });
@@ -135,7 +136,7 @@ async function acceptOffer(req, res) {
       return res.status(400).json({ data: { error: 'userId required (header x-user-id or ?userId=...)' } });
     }
 
-    const requirePayment = String(process.env.REQUIRE_PAYMENT_FOR_CONTACT || '').toLowerCase() === 'true';
+    const requirePayment = String(process.env.REQUIRE_PAYMENT_FOR_CONTACT || 'true').toLowerCase() !== 'false';
 
     const accepted = await store.acceptOffer({
       listingId,
@@ -158,4 +159,39 @@ async function acceptOffer(req, res) {
   }
 }
 
-module.exports = { feed, create, offersForListing, createOffer, acceptOffer };
+async function unlockAcceptedOffer(req, res) {
+  try {
+    const listingId = req.params.listingId;
+    const offerId = req.params.offerId;
+    const userId = getActorUserId(req);
+    if (!userId) {
+      return res.status(400).json({ data: { error: 'userId required (header x-user-id or ?userId=...)' } });
+    }
+
+    const listing = await store.getListingById(listingId);
+    if (!listing) {
+      return res.status(404).json({ data: { error: 'listing not found' } });
+    }
+
+    const offer = await store.getOfferById(listingId, offerId);
+    if (!offer) {
+      return res.status(404).json({ data: { error: 'offer not found' } });
+    }
+
+    const uid = String(userId);
+    if (String(listing.ownerId) !== uid && String(offer.providerId) !== uid) {
+      return res.status(403).json({ data: { error: 'forbidden' } });
+    }
+
+    await store.unlockOffer(listing.ownerId, offer.offerId);
+    if (offer.providerId) {
+      await store.unlockOffer(offer.providerId, offer.offerId);
+    }
+
+    return res.status(201).json({ data: { ok: true } });
+  } catch (e) {
+    return sendStoreError(res, e);
+  }
+}
+
+module.exports = { feed, create, offersForListing, createOffer, acceptOffer, unlockAcceptedOffer };

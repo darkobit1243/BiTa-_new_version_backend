@@ -369,6 +369,14 @@ function createPostgresStore() {
       return mapListingRow(rows[0]);
     },
 
+    async getOfferById(listingId, offerId) {
+      const { rows } = await pool.query(
+        'SELECT * FROM offers WHERE offer_id=$1 AND listing_id=$2 LIMIT 1',
+        [Number(offerId), Number(listingId)],
+      );
+      return mapOfferRow(rows[0]);
+    },
+
     async getUserById(userId) {
       const { rows } = await pool.query('SELECT * FROM users WHERE user_id=$1 LIMIT 1', [Number(userId)]);
       return mapUserRow(rows[0]);
@@ -457,7 +465,7 @@ function createPostgresStore() {
       return offer;
     },
 
-    async listFeed({ serviceType, adType, originCityId, destinationCityId }) {
+    async listFeed({ serviceType, adType, originCityId, destinationCityId, includeAcceptedOwnerId }) {
       const where = [];
       const params = [];
 
@@ -476,6 +484,22 @@ function createPostgresStore() {
       if (destinationCityId) {
         params.push(Number(destinationCityId));
         where.push(`destination_city_id = $${params.length}`);
+      }
+
+      const includeOwnerId = includeAcceptedOwnerId == null ? '' : String(includeAcceptedOwnerId).trim();
+
+      if (includeOwnerId) {
+        params.push(includeOwnerId);
+        where.push(`(
+          NOT EXISTS (
+            SELECT 1 FROM offers o WHERE o.listing_id = listings.id AND o.status = 'accepted'
+          )
+          OR listings.owner_id = $${params.length}
+        )`);
+      } else {
+        where.push(`NOT EXISTS (
+          SELECT 1 FROM offers o WHERE o.listing_id = listings.id AND o.status = 'accepted'
+        )`);
       }
 
       const sql = `SELECT * FROM listings ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC`;

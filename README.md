@@ -107,6 +107,7 @@ If Docker is not available, see `deploy/README.md` for a systemd-based deploymen
 - `GET /listings/:listingId/offers`
 - `POST /listings/:listingId/offers`
 - `POST /listings/:listingId/offers/:offerId/accept`
+- `POST /listings/:listingId/offers/:offerId/unlock`
 - `GET /users/:userId/unlocked-offers`
 - `POST /users/:userId/unlocked-offers`
 - `GET /users/:userId/offers`
@@ -116,8 +117,8 @@ If Docker is not available, see `deploy/README.md` for a systemd-based deploymen
 
 This backend supports two modes for revealing contact info after an offer is accepted:
 
-- **Bypass mode (default):** accepting an offer automatically unlocks contact for both sides.
-- **Payment-required mode:** accepting an offer does **not** unlock contact. You can unlock later (e.g. after iyzico payment succeeds) by calling `POST /users/:userId/unlocked-offers`.
+- **Bypass mode:** accepting an offer automatically unlocks contact for both sides.
+- **Payment-required mode:** accepting an offer does **not** unlock contact. You can unlock later (e.g. after iyzico payment succeeds) by calling `POST /listings/:listingId/offers/:offerId/unlock`.
 
 Toggle with environment variable:
 

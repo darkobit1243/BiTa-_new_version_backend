@@ -243,18 +243,36 @@ function createMemoryStore() {
       return listing;
     },
 
-    listFeed({ userRole, serviceType, adType, originCityId, destinationCityId }) {
+    listFeed({ userRole, serviceType, adType, originCityId, destinationCityId, includeAcceptedOwnerId }) {
       let items = db.listings.slice();
       if (serviceType) items = items.filter((l) => String(l.serviceType) === String(serviceType));
       if (adType) items = items.filter((l) => String(l.adType) === String(adType));
       if (originCityId) items = items.filter((l) => String(l.originCityId || '') === String(originCityId));
       if (destinationCityId) items = items.filter((l) => String(l.destinationCityId || '') === String(destinationCityId));
+      const includeOwnerId = includeAcceptedOwnerId == null ? '' : String(includeAcceptedOwnerId).trim();
+
+      function hasAcceptedOffer(listingId) {
+        const list = db.offersByListingId.get(String(listingId)) || [];
+        return list.some((o) => String(o.status || '').toLowerCase() === 'accepted');
+      }
+
+      items = items.filter((l) => {
+        if (!hasAcceptedOffer(l.id)) return true;
+        if (!includeOwnerId) return false;
+        return String(l.ownerId) === includeOwnerId;
+      });
+
       // userRole reserved for future
       return items;
     },
 
     getListingById(listingId) {
       return db.listings.find((l) => String(l.id) === String(listingId)) || null;
+    },
+
+    getOfferById(listingId, offerId) {
+      const list = db.offersByListingId.get(String(listingId)) || [];
+      return list.find((o) => String(o.offerId) === String(offerId)) || null;
     },
 
     createOffer({ listingId, providerId, companyName, phone, email, providerCity, providerDistrict, price }) {
