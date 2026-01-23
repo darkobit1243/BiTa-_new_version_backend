@@ -91,8 +91,19 @@ jobs:
             fi
             echo "Using compose file: ${COMPOSE_FILE}"
 
+            echo "==> Cleanup old containers (safe best-effort)"
+            # When switching between compose files, old services (e.g. bita-mock-backend)
+            # can keep the project network busy and break `down`.
+            $COMPOSE -f docker-compose.yml down --remove-orphans >/dev/null 2>&1 || true
+            $COMPOSE -f docker-compose.postgres.yml down --remove-orphans >/dev/null 2>&1 || true
+
+            # Force-remove any leftover containers from older stacks (names are prefixed by compose project).
+            docker rm -f $(docker ps -aq --filter "name=bita-mock-backend") >/dev/null 2>&1 || true
+            docker rm -f $(docker ps -aq --filter "name=bita-backend") >/dev/null 2>&1 || true
+            docker rm -f $(docker ps -aq --filter "name=_db_") >/dev/null 2>&1 || true
+
             echo "==> Restart containers ($COMPOSE)"
-            $COMPOSE -f "$COMPOSE_FILE" down
+            $COMPOSE -f "$COMPOSE_FILE" down --remove-orphans || true
             $COMPOSE -f "$COMPOSE_FILE" up -d --build --remove-orphans
 
             echo "==> Containers"
