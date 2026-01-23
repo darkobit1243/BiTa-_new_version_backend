@@ -84,12 +84,19 @@ jobs:
               exit 1
             fi
 
+            echo "==> Pick compose file"
+            COMPOSE_FILE="docker-compose.yml"
+            if [ -f docker-compose.postgres.yml ]; then
+              COMPOSE_FILE="docker-compose.postgres.yml"
+            fi
+            echo "Using compose file: ${COMPOSE_FILE}"
+
             echo "==> Restart containers ($COMPOSE)"
-            $COMPOSE down
-            $COMPOSE up -d --build --remove-orphans
+            $COMPOSE -f "$COMPOSE_FILE" down
+            $COMPOSE -f "$COMPOSE_FILE" up -d --build --remove-orphans
 
             echo "==> Containers"
-            $COMPOSE ps || true
+            $COMPOSE -f "$COMPOSE_FILE" ps || true
 
             echo "==> Health check (retry up to ~30s)"
             ok=0
@@ -105,7 +112,7 @@ jobs:
             if [ "$ok" != "1" ]; then
               echo "ERROR: health check failed" >&2
               echo "==> Recent logs (tail 200)" >&2
-              $COMPOSE logs --tail=200 || true
+              $COMPOSE -f "$COMPOSE_FILE" logs --tail=200 || true
               exit 1
             fi
 

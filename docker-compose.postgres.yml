@@ -20,6 +20,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       PORT: 8080
       HOST: 0.0.0.0
@@ -27,6 +29,19 @@ services:
       DATABASE_URL: postgres://bita:bita_password@db:5432/bita
       ADMIN_EMAILS: ${ADMIN_EMAILS}
       ADMIN_TOKEN: ${ADMIN_TOKEN}
+      # SMTP (forgot/reset password)
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURE: ${SMTP_SECURE}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+
+      # Reset link base (where the user lands to complete reset)
+      RESET_URL_BASE: ${RESET_URL_BASE}
+      # Backward-compatible aliases used by the backend
+      ADMIN_PANEL_URL: ${ADMIN_PANEL_URL}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL}
       # LOG_REQUESTS: "true"
     depends_on:
       db:
