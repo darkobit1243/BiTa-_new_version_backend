@@ -105,7 +105,47 @@ If Docker is not available, see `deploy/README.md` for a systemd-based deploymen
 - `GET /listings/feed`
 - `POST /listings`
 - `GET /listings/:listingId/offers`
+- `POST /listings/:listingId/offers`
+- `POST /listings/:listingId/offers/:offerId/accept`
 - `GET /users/:userId/unlocked-offers`
 - `POST /users/:userId/unlocked-offers`
+- `GET /users/:userId/offers`
+- `GET /users/:userId/accepted-offers`
+
+## Contact unlock / payments
+
+This backend supports two modes for revealing contact info after an offer is accepted:
+
+- **Bypass mode (default):** accepting an offer automatically unlocks contact for both sides.
+- **Payment-required mode:** accepting an offer does **not** unlock contact. You can unlock later (e.g. after iyzico payment succeeds) by calling `POST /users/:userId/unlocked-offers`.
+
+Toggle with environment variable:
+
+```bash
+REQUIRE_PAYMENT_FOR_CONTACT=true
+```
+
+Notes:
+
+- Unlocks are stored per-user per-offer (each side can be unlocked independently).
+- The unlock endpoint is currently unauthenticated (demo); when integrating iyzico, it should be protected (e.g. admin token / signed webhook / server-side callback).
+
+## Admin endpoints
+
+Admin endpoints are mounted under `/admin/*` and are protected by `ADMIN_TOKEN`.
+
+- In **production** (`NODE_ENV=production`) the server requires `ADMIN_TOKEN` to be set (fails closed).
+- In **development**, if `ADMIN_TOKEN` is not set, admin routes are allowed (dev-friendly). You can force strict behavior with `REQUIRE_ADMIN_TOKEN=true`.
+
+Provide the token using either header:
+
+- `Authorization: Bearer <ADMIN_TOKEN>`
+- `x-admin-token: <ADMIN_TOKEN>`
+
+Quick token check:
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/admin/health
+```
 
 All responses are shaped as `{ data: ... }`.

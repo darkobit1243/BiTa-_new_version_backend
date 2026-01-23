@@ -237,58 +237,8 @@ function createMemoryStore() {
       };
       db.listings.unshift(listing);
 
-      // Seed 3 offers for this listing so offers screen has data.
-      const baseOffers = [
-        {
-          offerId: nextOfferId++,
-          providerId: 'provider_1',
-          companyName: 'Express Logistics Ltd.',
-          phone: '+90 532 123 4567',
-          email: 'contact@expresslogistics.example',
-          providerCity: payload.originCityName || 'İstanbul',
-          providerDistrict: 'Kadıköy',
-          price: 4500,
-          rating: 4.8,
-          reviewCount: 127,
-          yearsInBusiness: 12,
-          vehicleCount: 45,
-        },
-        {
-          offerId: nextOfferId++,
-          providerId: 'provider_2',
-          companyName: 'Hızlı Taşıma A.Ş.',
-          phone: '+90 533 987 6543',
-          email: 'info@hizlitasima.example',
-          providerCity: payload.originCityName || 'İstanbul',
-          providerDistrict: 'Pendik',
-          price: 4750,
-          rating: 4.6,
-          reviewCount: 86,
-          yearsInBusiness: 7,
-          vehicleCount: null,
-        },
-        {
-          offerId: nextOfferId++,
-          providerId: 'provider_3',
-          companyName: 'Marmara Nakliyat',
-          phone: '+90 536 222 1122',
-          email: 'sales@marmaranakliyat.example',
-          providerCity: payload.originCityName || 'Kocaeli',
-          providerDistrict: 'Gebze',
-          price: 5100,
-          rating: 4.9,
-          reviewCount: 210,
-          yearsInBusiness: null,
-          vehicleCount: 18,
-        },
-      ].map((o) => ({
-        ...o,
-        id: String(o.offerId),
-        listingId: listing.id,
-        isUnlocked: false,
-      }));
-
-      db.offersByListingId.set(listing.id, baseOffers);
+      // Start with no offers; offers must be created by users.
+      db.offersByListingId.set(listing.id, []);
       db._persistSoon();
       return listing;
     },
@@ -303,8 +253,153 @@ function createMemoryStore() {
       return items;
     },
 
-    getOffersForListing(listingId) {
-      return db.offersByListingId.get(String(listingId)) || [];
+    getListingById(listingId) {
+      return db.listings.find((l) => String(l.id) === String(listingId)) || null;
+    },
+
+    createOffer({ listingId, providerId, companyName, phone, email, providerCity, providerDistrict, price }) {
+      const listing = db.getListingById(listingId);
+      if (!listing) {
+        const err = new Error('listing not found');
+        err.status = 404;
+        throw err;
+      }
+
+      const offer = {
+        offerId: nextOfferId++,
+        id: null,
+        listingId: String(listing.id),
+        providerId: String(providerId),
+        companyName: String(companyName || ''),
+        phone: phone ? String(phone) : null,
+        email: email ? String(email) : null,
+        providerCity: providerCity ? String(providerCity) : null,
+        providerDistrict: providerDistrict ? String(providerDistrict) : null,
+        price: price === undefined || price === null ? null : Number(price),
+        rating: null,
+        reviewCount: null,
+        yearsInBusiness: null,
+        vehicleCount: null,
+        status: 'pending',
+        createdAt: nowIso(),
+        acceptedAt: null,
+        acceptedBy: null,
+        isUnlocked: false,
+      };
+      offer.id = String(offer.offerId);
+
+      const list = db.offersByListingId.get(String(listing.id)) || [];
+      list.push(offer);
+      db.offersByListingId.set(String(listing.id), list);
+      db._persistSoon();
+      return offer;
+    },
+
+    acceptOffer({ listingId, offerId, ownerId, unlockNow = true }) {
+      const listing = db.getListingById(listingId);
+      if (!listing) {
+        const err = new Error('listing not found');
+        err.status = 404;
+        throw err;
+      }
+      if (String(listing.ownerId) !== String(ownerId)) {
+        const err = new Error('forbidden');
+        err.status = 403;
+        throw err;
+      }
+
+      const list = db.offersByListingId.get(String(listing.id)) || [];
+      const offer = list.find((o) => Number(o.offerId) === Number(offerId));
+      if (!offer) {
+        const err = new Error('offer not found');
+        err.status = 404;
+        throw err;
+      }
+
+      offer.status = 'accepted';
+      offer.acceptedAt = nowIso();
+      offer.acceptedBy = String(ownerId);
+
+      if (unlockNow) {
+        // Payment/unlock flow is bypassed for now.
+        db.unlockOffer(ownerId, offer.offerId);
+        if (offer.providerId) db.unlockOffer(offer.providerId, offer.offerId);
+      }
+
+      db._persistSoon();
+      return offer;
+    },
+
+    getOffersForProvider(providerId, { status } = {}) {
+      const pid = String(providerId);
+      const statusFilter = status ? String(status).toLowerCase() : null;
+      const unlocked = new Set(db.getUnlockedOfferIds(pid).map(Number));
+
+      const out = [];
+      for (const listing of db.listings) {
+        const offers = db.offersByListingId.get(String(listing.id)) || [];
+        for (const o of offers) {
+          if (String(o.providerId) !== pid) continue;
+          if (statusFilter && String(o.status || 'pending').toLowerCase() != statusFilter) continue;
+
+          const isUnlocked = unlocked.has(Number(o.offerId));
+          const owner = db.users.find((u) => String(u.userId) === String(listing.ownerId)) || null;
+
+          out.push({
+            offer: {
+              ...o,
+              isUnlocked,
+              phone: isUnlocked ? o.phone : null,
+              email: isUnlocked ? o.email : null,
+            },
+            listing,
+            owner: isUnlocked && owner
+              ? {
+                  userId: String(owner.userId),
+                  email: owner.email,
+                  name: owner.name,
+                }
+              : null,
+          });
+        }
+      }
+
+      // Newest first when createdAt exists.
+      out.sort((a, b) => String(b.offer.createdAt || '').localeCompare(String(a.offer.createdAt || '')));
+      return out;
+    },
+
+    getOffersForListing(listingId, { viewerUserId } = {}) {
+      const listing = db.getListingById(listingId);
+      if (!listing) {
+        const err = new Error('listing not found');
+        err.status = 404;
+        throw err;
+      }
+
+      if (viewerUserId === undefined || viewerUserId === null || String(viewerUserId).trim() === '') {
+        const err = new Error('viewer userId required');
+        err.status = 400;
+        throw err;
+      }
+
+      if (String(listing.ownerId) !== String(viewerUserId)) {
+        const err = new Error('forbidden');
+        err.status = 403;
+        throw err;
+      }
+
+      const unlocked = new Set(db.getUnlockedOfferIds(viewerUserId).map(Number));
+      const list = db.offersByListingId.get(String(listingId)) || [];
+      return list.map((o) => {
+        const isUnlocked = unlocked.has(Number(o.offerId));
+        return {
+          ...o,
+          isUnlocked,
+          phone: isUnlocked ? o.phone : null,
+          email: isUnlocked ? o.email : null,
+        };
+      });
     },
 
     getUnlockedOfferIds(userId) {
@@ -321,37 +416,7 @@ function createMemoryStore() {
     },
   };
 
-  function seedDemoData() {
-    const demo = db.createUser({
-      email: 'demo@bitasi.app',
-      name: 'Demo Kullanıcı',
-      role: 'seeker',
-      isPremium: false,
-    });
-
-    db.createListing({
-      ownerId: demo.email,
-      ownerRole: 'seeker',
-      title: 'İstanbul → Ankara Parsiyel',
-      adType: 'cargo',
-      serviceType: 'transport',
-      originCityId: 34,
-      originCityName: 'İstanbul',
-      originDistrictId: 1,
-      originDistrictName: 'Kadıköy',
-      destinationCityId: 6,
-      destinationCityName: 'Ankara',
-      destinationDistrictId: 1,
-      destinationDistrictName: 'Çankaya',
-      date: nowIso(),
-      cargoType: 'Palet',
-      weight: '1000',
-      providerId: null,
-      providerCompanyName: null,
-      notes: null,
-      isBoosted: false,
-    });
-  }
+  function seedDemoData() {}
 
   function tryLoadPersistedData() {
     if (!persistEnabled) return false;

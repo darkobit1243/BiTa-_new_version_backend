@@ -80,6 +80,10 @@ function mapOfferRow(row) {
     reviewCount: row.review_count === null ? null : Number(row.review_count),
     yearsInBusiness: row.years_in_business === null ? null : Number(row.years_in_business),
     vehicleCount: row.vehicle_count === null ? null : Number(row.vehicle_count),
+    status: row.status || 'pending',
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    acceptedAt: row.accepted_at ? new Date(row.accepted_at).toISOString() : null,
+    acceptedBy: row.accepted_by || null,
     isUnlocked: false,
   };
 }
@@ -152,6 +156,11 @@ async function runMigrations(pool) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_hash TEXT NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMPTZ NULL;
+
+    ALTER TABLE offers ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';
+    ALTER TABLE offers ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ NULL;
+    ALTER TABLE offers ADD COLUMN IF NOT EXISTS accepted_by TEXT NULL;
+    ALTER TABLE offers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
   `);
 }
 
@@ -204,41 +213,7 @@ function createPostgresStore() {
         throw lastErr;
       }
 
-      // Seed demo data once if empty
-      const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM listings');
-      const count = rows[0]?.c || 0;
-      if (count === 0) {
-        const demoUser = await store.createUser({
-          email: 'demo@bitasi.app',
-          name: 'Demo Kullanıcı',
-          role: 'seeker',
-          isPremium: false,
-          providerServiceType: null,
-        });
-
-        await store.createListing({
-          ownerId: demoUser.email,
-          ownerRole: 'seeker',
-          title: 'İstanbul → Ankara Parsiyel',
-          adType: 'cargo',
-          serviceType: 'transport',
-          originCityId: 34,
-          originCityName: 'İstanbul',
-          originDistrictId: 1,
-          originDistrictName: 'Kadıköy',
-          destinationCityId: 6,
-          destinationCityName: 'Ankara',
-          destinationDistrictId: 1,
-          destinationDistrictName: 'Çankaya',
-          date: new Date().toISOString(),
-          cargoType: 'Palet',
-          weight: '1000',
-          providerId: null,
-          providerCompanyName: null,
-          notes: null,
-          isBoosted: false,
-        });
-      }
+      // No demo seeding: production behavior is user-driven.
     },
 
     async stats() {
@@ -386,76 +361,100 @@ function createPostgresStore() {
       );
 
       const listing = mapListingRow(listingInsert.rows[0]);
+      return listing;
+    },
 
-      // Seed offers
-      const originCityName = payload.originCityName || 'İstanbul';
-      const seed = [
-        {
-          providerId: 'provider_1',
-          companyName: 'Express Logistics Ltd.',
-          phone: '+90 532 123 4567',
-          email: 'contact@expresslogistics.example',
-          providerCity: originCityName,
-          providerDistrict: 'Kadıköy',
-          price: 4500,
-          rating: 4.8,
-          reviewCount: 127,
-          yearsInBusiness: 12,
-          vehicleCount: 45,
-        },
-        {
-          providerId: 'provider_2',
-          companyName: 'Hızlı Taşıma A.Ş.',
-          phone: '+90 533 987 6543',
-          email: 'info@hizlitasima.example',
-          providerCity: originCityName,
-          providerDistrict: 'Pendik',
-          price: 4750,
-          rating: 4.6,
-          reviewCount: 86,
-          yearsInBusiness: 7,
-          vehicleCount: null,
-        },
-        {
-          providerId: 'provider_3',
-          companyName: 'Marmara Nakliyat',
-          phone: '+90 536 222 1122',
-          email: 'sales@marmaranakliyat.example',
-          providerCity: payload.originCityName || 'Kocaeli',
-          providerDistrict: 'Gebze',
-          price: 5100,
-          rating: 4.9,
-          reviewCount: 210,
-          yearsInBusiness: null,
-          vehicleCount: 18,
-        },
-      ];
+    async getListingById(listingId) {
+      const { rows } = await pool.query('SELECT * FROM listings WHERE id=$1 LIMIT 1', [Number(listingId)]);
+      return mapListingRow(rows[0]);
+    },
 
-      for (const o of seed) {
-        await pool.query(
-          `INSERT INTO offers (
-            listing_id, provider_id, company_name, phone, email,
-            provider_city, provider_district, price, rating,
-            review_count, years_in_business, vehicle_count
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-          [
-            Number(listing.id),
-            o.providerId,
-            o.companyName,
-            o.phone,
-            o.email,
-            o.providerCity,
-            o.providerDistrict,
-            o.price,
-            o.rating,
-            o.reviewCount,
-            o.yearsInBusiness,
-            o.vehicleCount,
-          ],
-        );
+    async getUserById(userId) {
+      const { rows } = await pool.query('SELECT * FROM users WHERE user_id=$1 LIMIT 1', [Number(userId)]);
+      return mapUserRow(rows[0]);
+    },
+
+    async createOffer(payload) {
+      const listingId = Number(payload.listingId);
+      if (!Number.isFinite(listingId) || listingId <= 0) {
+        throw new Error('invalid listingId');
       }
 
-      return listing;
+      const listing = await store.getListingById(listingId);
+      if (!listing) {
+        const err = new Error('listing not found');
+        err.status = 404;
+        throw err;
+      }
+
+      const { rows } = await pool.query(
+        `INSERT INTO offers (
+          listing_id, provider_id, company_name, phone, email,
+          provider_city, provider_district, price, rating,
+          review_count, years_in_business, vehicle_count
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        RETURNING *`,
+        [
+          listingId,
+          String(payload.providerId),
+          String(payload.companyName),
+          payload.phone ? String(payload.phone) : null,
+          payload.email ? String(payload.email) : null,
+          payload.providerCity ? String(payload.providerCity) : null,
+          payload.providerDistrict ? String(payload.providerDistrict) : null,
+          payload.price === undefined || payload.price === null ? null : Number(payload.price),
+          payload.rating === undefined || payload.rating === null ? null : Number(payload.rating),
+          payload.reviewCount === undefined || payload.reviewCount === null ? null : Number(payload.reviewCount),
+          payload.yearsInBusiness === undefined || payload.yearsInBusiness === null ? null : Number(payload.yearsInBusiness),
+          payload.vehicleCount === undefined || payload.vehicleCount === null ? null : Number(payload.vehicleCount),
+        ],
+      );
+
+      return mapOfferRow(rows[0]);
+    },
+
+    async acceptOffer({ listingId, offerId, ownerId, unlockNow = true }) {
+      const listing = await store.getListingById(listingId);
+      if (!listing) {
+        const err = new Error('listing not found');
+        err.status = 404;
+        throw err;
+      }
+
+      if (String(listing.ownerId) !== String(ownerId)) {
+        const err = new Error('forbidden');
+        err.status = 403;
+        throw err;
+      }
+
+      const { rows } = await pool.query(
+        `UPDATE offers
+         SET status='accepted', accepted_at=now(), accepted_by=$3
+         WHERE offer_id=$1 AND listing_id=$2
+         RETURNING *`,
+        [Number(offerId), Number(listingId), String(ownerId)],
+      );
+
+      const offer = mapOfferRow(rows[0]);
+      if (!offer) {
+        const err = new Error('offer not found');
+        err.status = 404;
+        throw err;
+      }
+
+      if (unlockNow) {
+        // Payment/unlock flow is bypassed for now.
+        const ownerIdNum = Number(ownerId);
+        const providerIdNum = Number(offer.providerId);
+        if (Number.isFinite(ownerIdNum) && ownerIdNum > 0) {
+          await store.unlockOffer(ownerIdNum, offer.offerId);
+        }
+        if (Number.isFinite(providerIdNum) && providerIdNum > 0) {
+          await store.unlockOffer(providerIdNum, offer.offerId);
+        }
+      }
+
+      return offer;
     },
 
     async listFeed({ serviceType, adType, originCityId, destinationCityId }) {
@@ -484,9 +483,45 @@ function createPostgresStore() {
       return rows.map(mapListingRow);
     },
 
-    async getOffersForListing(listingId) {
+    async getOffersForListing(listingId, { viewerUserId } = {}) {
+      const listing = await store.getListingById(listingId);
+      if (!listing) {
+        const err = new Error('listing not found');
+        err.status = 404;
+        throw err;
+      }
+
+      if (viewerUserId === undefined || viewerUserId === null || String(viewerUserId).trim() === '') {
+        const err = new Error('viewer userId required');
+        err.status = 400;
+        throw err;
+      }
+
+      if (String(listing.ownerId) !== String(viewerUserId)) {
+        const err = new Error('forbidden');
+        err.status = 403;
+        throw err;
+      }
+
       const { rows } = await pool.query('SELECT * FROM offers WHERE listing_id=$1 ORDER BY offer_id ASC', [Number(listingId)]);
-      return rows.map(mapOfferRow);
+
+      let unlocked = new Set();
+      const viewerNum = Number(viewerUserId);
+      if (Number.isFinite(viewerNum) && viewerNum > 0) {
+        const unlockedRows = await pool.query('SELECT offer_id FROM unlocked_offers WHERE user_id=$1', [viewerNum]);
+        unlocked = new Set(unlockedRows.rows.map((r) => Number(r.offer_id)));
+      }
+
+      return rows.map((r) => {
+        const offer = mapOfferRow(r);
+        const isUnlocked = unlocked.has(Number(offer.offerId));
+        return {
+          ...offer,
+          isUnlocked,
+          phone: isUnlocked ? offer.phone : null,
+          email: isUnlocked ? offer.email : null,
+        };
+      });
     },
 
     async getUnlockedOfferIds(userId) {
@@ -499,6 +534,74 @@ function createPostgresStore() {
         'INSERT INTO unlocked_offers (user_id, offer_id) VALUES ($1,$2) ON CONFLICT (user_id, offer_id) DO NOTHING',
         [Number(userId), Number(offerId)],
       );
+    },
+
+    async getOffersForProvider(providerId, { status } = {}) {
+      const pid = String(providerId);
+      if (!pid.trim()) {
+        const err = new Error('providerId required');
+        err.status = 400;
+        throw err;
+      }
+
+      const where = ['o.provider_id = $1'];
+      const params = [pid];
+      if (status) {
+        params.push(String(status));
+        where.push(`o.status = $${params.length}`);
+      }
+
+      const sql = `
+        SELECT
+          o.*,
+          l.*
+        FROM offers o
+        JOIN listings l ON l.id = o.listing_id
+        WHERE ${where.join(' AND ')}
+        ORDER BY o.created_at DESC NULLS LAST, o.offer_id DESC
+      `;
+
+      const { rows } = await pool.query(sql, params);
+
+      const providerNum = Number(providerId);
+      const unlocked = new Set(
+        Number.isFinite(providerNum) && providerNum > 0
+          ? await store.getUnlockedOfferIds(providerNum)
+          : [],
+      );
+
+      const out = [];
+      for (const row of rows) {
+        const offer = mapOfferRow(row);
+        const listing = mapListingRow(row);
+        const isUnlocked = unlocked.has(Number(offer.offerId));
+
+        // listing.ownerId is TEXT; try to parse to numeric userId for join.
+        let owner = null;
+        const ownerNum = Number(listing.ownerId);
+        if (isUnlocked && Number.isFinite(ownerNum) && ownerNum > 0) {
+          owner = await store.getUserById(ownerNum);
+        }
+
+        out.push({
+          offer: {
+            ...offer,
+            isUnlocked,
+            phone: isUnlocked ? offer.phone : null,
+            email: isUnlocked ? offer.email : null,
+          },
+          listing,
+          owner: owner
+            ? {
+                userId: owner.userId,
+                email: owner.email,
+                name: owner.name,
+              }
+            : null,
+        });
+      }
+
+      return out;
     },
 
     async dump() {
