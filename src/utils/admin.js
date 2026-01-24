@@ -29,4 +29,8 @@ function getAdminToken() {
   return String(process.env.ADMIN_TOKEN || '').trim();
 }
 
-module.exports = { getAdminEmails, isAdminEmail, getAdminToken };
+function getAdminJwtSecret() {
+  return String(process.env.ADMIN_JWT_SECRET || '').trim();
+}
+
+module.exports = { getAdminEmails, isAdminEmail, getAdminToken, getAdminJwtSecret };

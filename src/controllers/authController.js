@@ -1,8 +1,9 @@
 const { store } = require('../store/store');
-const { isAdminEmail } = require('../utils/admin');
+const { isAdminEmail, getAdminJwtSecret } = require('../utils/admin');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
+const jwt = require('jsonwebtoken');
 
 function truthy(v) {
   return ['1', 'true', 'yes', 'on'].includes(String(v || '').toLowerCase());
@@ -154,7 +155,8 @@ async function sendResetEmail({ to, otp }) {
 }
 
 function sessionFromUser(user) {
-  return {
+  const isAdmin = isAdminEmail(user.email);
+  const session = {
     userId: user.userId,
     email: user.email,
     name: user.name,
@@ -162,8 +164,27 @@ function sessionFromUser(user) {
     isPremium: user.isPremium,
     providerServiceType: user.providerServiceType,
     approvalStatus: user.approvalStatus || 'pending',
-    isAdmin: isAdminEmail(user.email),
+    isAdmin,
   };
+
+  if (isAdmin) {
+    const secret = getAdminJwtSecret();
+    if (secret) {
+      const ttl = String(process.env.ADMIN_JWT_TTL || '12h');
+      session.adminAccessToken = jwt.sign(
+        {
+          sub: String(user.userId),
+          email: String(user.email),
+          isAdmin: true,
+        },
+        secret,
+        { expiresIn: ttl },
+      );
+      session.adminTokenType = 'Bearer';
+    }
+  }
+
+  return session;
 }
 
 async function login(req, res) {
